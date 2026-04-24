@@ -2,6 +2,7 @@
 
 ## Stack
 - **Language:** Kotlin
+- **JVM target:** 11 (core and lwjgl3 modules — required by Fleks 2.11)
 - **ECS:** Fleks 2.x
 - **Framework:** LibGDX + LibKTX
 - **Target:** Desktop (lwjgl3)
@@ -45,60 +46,16 @@ ResearchManager         active research goal + progress float
 ---
 
 ## ECS Components
+
+Enums live in `data/Enums.kt`. `Recipe` is a plain data class in `data/RecipeRegistry.kt` — it is **not** a component.
+
+Each ECS component is **its own file** in the `components/` package. Never group multiple components in one file. Every component implements `Component<T>` with a companion object as its `ComponentType<T>`:
+
 ```kotlin
-enum class ResourceCategory { RAW, PROCESSED, INTERMEDIATE, SCIENCE }
-
-enum class Resource(val category: ResourceCategory) {
-    IRON_ORE(RAW), COAL(RAW), STONE(RAW),
-    IRON_PLATE(PROCESSED)
+data class Producer(...) : Component<Producer> {
+    override fun type() = Producer
+    companion object : ComponentType<Producer>()
 }
-
-enum class BuildingType { STONE_FURNACE, BASIC_MINER }
-
-enum class GroupState { RUNNING, STALLED, FUEL_STARVED, PAUSED, NO_RECIPE }
-
-enum class GroupPriority { LOWEST, LOW, NORMAL, HIGH, HIGHEST }
-
-data class Building(val type: BuildingType)           // Phase 1 individual buildings only
-
-data class BuildingGroup(                              // Phase 2+ replaces Building
-    val id: String,
-    val type: BuildingType,
-    var name: String,
-    var count: Int = 0,
-    var priority: GroupPriority = GroupPriority.NORMAL,
-    var paused: Boolean = false
-)
-
-data class Producer(
-    var recipe: Recipe? = null,
-    var progress: Float = 0f,
-    var groupState: GroupState = GroupState.NO_RECIPE
-)
-
-data class Miner(
-    var assignedResource: Resource? = null,
-    var progress: Float = 0f,
-    var groupState: GroupState = GroupState.NO_RECIPE
-)
-
-data class FuelConsumer(
-    val fuelType: Resource,
-    val consumeRate: Float,       // per second (e.g. 1/30f)
-    var fuelBuffer: Float = 0f
-)
-
-data class ResourceBuffer(
-    val capacity: Map<Resource, Float>,
-    val contents: MutableMap<Resource, Float> = mutableMapOf()
-)
-
-// Recipe is a data definition, NOT a component
-data class Recipe(
-    val inputs: Map<Resource, Float>,
-    val outputs: Map<Resource, Float>,
-    val duration: Float
-)
 ```
 
 ---
@@ -114,9 +71,14 @@ data class Recipe(
 
 ## Fleks 2.x API Notes
 - World builder: `configureWorld { }` — import `com.github.quillraven.fleks.configureWorld`. Not `world {}` or `World {}`
-- No `components { }` block — components are auto-registered plain Kotlin classes
+- Components must implement `Component<T>` with a companion object `ComponentType<T>` — the companion is the key used in families and `entity[...]` access
+- No `components { }` registration block — components are picked up automatically via their `ComponentType`
 - Systems added as instances: `systems { add(SomeSystem()) }`
 - `injectables { add(dependency) }` registers by type name
+- Inject inside a system: `private val pool = world.inject<GlobalResourcePool>()`
+- Component access: `entity[Producer]` (throws if absent), `entity.getOrNull(Producer)` (nullable), `entity has Producer` (boolean)
+- Family defined in system constructor: `IteratingSystem(family { all(Producer, ResourceBuffer) })`
+- `World.Companion.family { }` is available during `configureWorld` — import `com.github.quillraven.fleks.World.Companion.family`
 
 ---
 
