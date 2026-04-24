@@ -60,8 +60,8 @@ All assets go into a single texture atlas (`ui.atlas`). One atlas = one texture 
 
 ### Button Nine-Patches
 
-All button nine-patches: **16×16px, 4px corner split all sides.**
-The 1px center (between the 4px corners) is the stretch region.
+All button nine-patches: **48×48px, 12px corner split all sides.**
+*(Inner fill rectangle: 46×46px at position 1,1 — Inkscape rx outer: 12px, inner: 11px)*
 
 #### Default Buttons (general use: build, confirm, actions)
 | Asset | Background | Border |
@@ -87,17 +87,19 @@ The 1px center (between the 4px corners) is the stretch region.
 | `btn_danger_down` | `#341212` | `#a02020` |
 | `btn_danger_disabled` | `#28201e` | `#402828` |
 
-#### Nav Buttons (sidebar icon buttons) — **12×12px, 3px corner split**
+#### Nav Buttons (sidebar icon buttons) — **48×48px, 12px corner split**
+*(Same dimensions as regular buttons — nav buttons display at similar screen size)*
 | Asset | Background | Border |
 |---|---|---|
-| `btn_nav_up` | `#22242a` | none / `#2e3038` very subtle |
+| `btn_nav_up` | `#22242a` | `#2e3038` (very subtle, nearly invisible) |
 | `btn_nav_over` | `#2d303a` | `#4a4f5e` |
 | `btn_nav_down` | `#1a1c22` | `#3a3d47` |
-| `btn_nav_selected` | `#1e2028` | `#e8a020` accent border |
+| `btn_nav_selected` | `#1e2028` | `#e8a020` (accent border — active tab) |
 
 ---
 
-### Panel Nine-Patches — **10×10px, 3px corner split**
+### Panel Nine-Patches — **32×32px, 8px corner split**
+*(Inner fill rectangle: 30×30px at position 1,1 — Inkscape rx outer: 8px, inner: 7px)*
 
 | Asset | Background | Border |
 |---|---|---|
@@ -106,16 +108,18 @@ The 1px center (between the 4px corners) is the stretch region.
 | `panel_inset` | `#18191e` | `#2a2c34` |
 | `tooltip_bg` | `#12131a` | `#5a6070` |
 
-#### Resource Bar Background — **8×8px, 2px corner split**
+#### Resource Bar Background — **24×24px, 6px corner split**
+*(Inner fill: 22×22px at 1,1 — Inkscape rx outer: 6px, inner: 5px)*
 | Asset | Background | Border |
 |---|---|---|
 | `resource_bar_bg` | `#1a1a1f` | `#3a3d47` |
 
 ---
 
-### Group Card Backgrounds — **20×20px, 4px corner split, 2px border baked in**
+### Group Card Backgrounds — **48×48px, 12px corner split, 2px border baked in**
 
-Dark fill is identical across all five. Only the border color changes.
+Dark fill is identical across all five — only the border color changes.
+*(Outer rect: 48×48px rx 12px — Inner fill rect: 44×44px at position 2,2 — rx: 10px)*
 
 | Asset | Fill | Border Color | State |
 |---|---|---|---|
@@ -131,18 +135,33 @@ Dark fill is identical across all five. Only the border color changes.
 
 Fill nine-patches are slightly smaller than the track to create a visible inset.
 
-#### Track — **8×8px, 3px corner split (horizontal only matters)**
+#### Track — **24×24px, 6px corner split**
+*(Inner fill: 22×22px at 1,1 — Inkscape rx outer: 6px, inner: 5px)*
 | Asset | Fill | Border |
 |---|---|---|
 | `progress_track` | `#18191e` | `#2a2c34` |
 
-#### Fills — **6×6px, 2px corner split**
+#### Fills — **20×20px, 5px corner split**
+*(Solid fill only — no border rectangle needed, Inkscape rx: 5px)*
 | Asset | Color | Use |
 |---|---|---|
 | `progress_fill_green` | `#27ae60` | General production progress |
 | `progress_fill_amber` | `#e8a020` | Mining cycle, construction timer |
 | `progress_fill_blue` | `#2980b9` | Research progress |
 | `progress_fill_red` | `#c0392b` | Fuel level (low warning) |
+
+---
+
+### Nine-Patch Quick Reference (Inkscape)
+
+| Asset Group | Texture Size | Corner Split | rx outer | rx inner | Inner rect position |
+|---|---|---|---|---|---|
+| All buttons (incl. nav) | 48×48px | 12px | 12px | 11px | 46×46 at (1,1) |
+| Panels | 32×32px | 8px | 8px | 7px | 30×30 at (1,1) |
+| Resource bar bg | 24×24px | 6px | 6px | 5px | 22×22 at (1,1) |
+| Card backgrounds | 48×48px | 12px | 12px | 10px | 44×44 at (2,2) — 2px border |
+| Progress track | 24×24px | 6px | 6px | 5px | 22×22 at (1,1) |
+| Progress fills | 20×20px | 5px | 5px | n/a | solid fill only |
 
 ---
 
