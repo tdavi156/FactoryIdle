@@ -248,10 +248,10 @@ Enum of all drawable asset names. Every nine-patch and icon in `docs/design-asse
 ```kotlin
 enum class Drawables {
     // Buttons
-    BTN_DEFAULT_UP, BTN_DEFAULT_OVER, BTN_DEFAULT_DOWN, BTN_DEFAULT_DISABLED,
-    BTN_ACCENT_UP, BTN_ACCENT_OVER, BTN_ACCENT_DOWN, BTN_ACCENT_DISABLED,
-    BTN_DANGER_UP, BTN_DANGER_OVER, BTN_DANGER_DOWN, BTN_DANGER_DISABLED,
-    BTN_NAV_UP, BTN_NAV_OVER, BTN_NAV_DOWN, BTN_NAV_SELECTED,
+    BUTTON_DEFAULT_UP, BUTTON_DEFAULT_OVER, BUTTON_DEFAULT_DOWN, BUTTON_DEFAULT_DISABLED,
+    BUTTON_ACCENT_UP, BUTTON_ACCENT_OVER, BUTTON_ACCENT_DOWN, BUTTON_ACCENT_DISABLED,
+    BUTTON_DANGER_UP, BUTTON_DANGER_OVER, BUTTON_DANGER_DOWN, BUTTON_DANGER_DISABLED,
+    BUTTON_NAVIGATION_UP, BUTTON_NAVIGATION_OVER, BUTTON_NAVIGATION_DOWN, BUTTON_NAVIGATION_SELECTED,
     // Panels
     PANEL_BG, PANEL_DARK, PANEL_INSET, TOOLTIP_BG, RESOURCE_BAR_BG,
     // Cards
@@ -262,8 +262,8 @@ enum class Drawables {
     PX_DIVIDER, PX_WHITE, PX_BLACK,
     // Status dots
     STATUS_RUNNING, STATUS_STALLED, STATUS_FUEL_STARVED, STATUS_PAUSED, STATUS_IDLE,
-    // Nav icons
-    ICON_NAV_FACTORY, ICON_NAV_POWER, ICON_NAV_RESEARCH, ICON_NAV_PROGRESS, ICON_NAV_SETTINGS,
+    // Navigation icons
+    ICON_NAVIGATION_FACTORY, ICON_NAVIGATION_POWER, ICON_NAVIGATION_RESEARCH, ICON_NAVIGATION_PROGRESS, ICON_NAVIGATION_SETTINGS,
     // Resource icons (sm = 20px, md = 36px)
     ICON_RSC_IRON_ORE_SM, ICON_RSC_IRON_ORE_MD,
     ICON_RSC_COAL_SM, ICON_RSC_COAL_MD,
@@ -282,7 +282,7 @@ Enum of button style names used in the skin.
 
 ```kotlin
 enum class Buttons {
-    DEFAULT, ACCENT, DANGER, NAV;
+    DEFAULT, ACCENT, DANGER, NAVIGATION;
     operator fun invoke() = name.lowercase()
 }
 ```
@@ -408,7 +408,7 @@ Manages which content view is currently visible. Holds references to all registe
 ---
 
 **`ui/views/NavSidebarView.kt`**
-A `Table` subclass. Vertical column of icon buttons, one per nav destination. Uses `btn_nav_*` skin styles. The active view's button uses the `BTN_NAV_SELECTED` drawable. Clicking a button calls `navigationModel.show(targetView)` and updates the selected state. Icons use the `ICON_NAV_*` drawables.
+A `Table` subclass. Vertical column of icon buttons, one per nav destination. Uses `button_navigation_*` skin styles. The active view's button uses the `BUTTON_NAVIGATION_SELECTED` drawable. Clicking a button calls `navigationModel.show(targetView)` and updates the selected state. Icons use the `ICON_NAVIGATION_*` drawables.
 
 ---
 

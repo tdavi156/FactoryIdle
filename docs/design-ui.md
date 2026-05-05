@@ -26,8 +26,8 @@ Root table uses `setFillParent(true)`. Resource bar spans full width (colspan 2 
 
 - Vertical icon column, ~64px wide, full height below the resource bar
 - One icon button per top-level view
-- `btn_nav_*` nine-patch styles for button states
-- Active view uses `btn_nav_selected` style (accent-colored border)
+- `button_nav_*` nine-patch styles for button states
+- Active view uses `button_nav_selected` style (accent-colored border)
 - Clicking a nav button hides the current content view and shows the selected one via `NavigationModel`
 
 ### Navigation Views (in order)

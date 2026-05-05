@@ -48,7 +48,7 @@ A 4px rounded-corner button: `4 + 1 + 4 = 9×9px minimum.` This nine-patch has p
 `minWidth = left_border + right_border`. `minHeight = top_border + bottom_border`. Never attempt to render a nine-patch smaller than its corner sizes.
 
 ### File naming
-Name files with `.9` before the extension: `btn_default_up.9.png`. LibGDX TexturePacker auto-detects the split lines from this convention.
+Name files with `.9` before the extension: `button_default_up.9.png`. LibGDX TexturePacker auto-detects the split lines from this convention.
 
 ---
 
@@ -66,35 +66,35 @@ All button nine-patches: **48×48px, 12px corner split all sides.**
 #### Default Buttons (general use: build, confirm, actions)
 | Asset | Background | Border |
 |---|---|---|
-| `btn_default_up` | `#2d303a` | `#4a4f5e` |
-| `btn_default_over` | `#363a47` | `#5a6070` |
-| `btn_default_down` | `#1e2028` | `#4a4f5e` |
-| `btn_default_disabled` | `#22242a` | `#2e3038` |
+| `button_default_up` | `#2d303a` | `#4a4f5e` |
+| `button_default_over` | `#363a47` | `#5a6070` |
+| `button_default_down` | `#1e2028` | `#4a4f5e` |
+| `button_default_disabled` | `#22242a` | `#2e3038` |
 
 #### Accent Buttons (primary CTA: first build, research start)
 | Asset | Background | Border |
 |---|---|---|
-| `btn_accent_up` | `#8a5a10` | `#e8a020` |
-| `btn_accent_over` | `#a06a14` | `#f0b030` |
-| `btn_accent_down` | `#6a4408` | `#c88a18` |
-| `btn_accent_disabled` | `#2e2a22` | `#4a4030` |
+| `button_accent_up` | `#8a5a10` | `#e8a020` |
+| `button_accent_over` | `#a06a14` | `#f0b030` |
+| `button_accent_down` | `#6a4408` | `#c88a18` |
+| `button_accent_disabled` | `#2e2a22` | `#4a4030` |
 
 #### Danger Buttons (demolish, disband, cancel)
 | Asset | Background | Border |
 |---|---|---|
-| `btn_danger_up` | `#4a1a1a` | `#c0392b` |
-| `btn_danger_over` | `#5a2020` | `#e04030` |
-| `btn_danger_down` | `#341212` | `#a02020` |
-| `btn_danger_disabled` | `#28201e` | `#402828` |
+| `button_danger_up` | `#4a1a1a` | `#c0392b` |
+| `button_danger_over` | `#5a2020` | `#e04030` |
+| `button_danger_down` | `#341212` | `#a02020` |
+| `button_danger_disabled` | `#28201e` | `#402828` |
 
 #### Nav Buttons (sidebar icon buttons) — **48×48px, 12px corner split**
 *(Same dimensions as regular buttons — nav buttons display at similar screen size)*
 | Asset | Background | Border |
 |---|---|---|
-| `btn_nav_up` | `#22242a` | `#2e3038` (very subtle, nearly invisible) |
-| `btn_nav_over` | `#2d303a` | `#4a4f5e` |
-| `btn_nav_down` | `#1a1c22` | `#3a3d47` |
-| `btn_nav_selected` | `#1e2028` | `#e8a020` (accent border — active tab) |
+| `button_nav_up` | `#22242a` | `#2e3038` (very subtle, nearly invisible) |
+| `button_nav_over` | `#2d303a` | `#4a4f5e` |
+| `button_nav_down` | `#1a1c22` | `#3a3d47` |
+| `button_nav_selected` | `#1e2028` | `#e8a020` (accent border — active tab) |
 
 ---
 
@@ -321,7 +321,7 @@ All assets live in a single `ui.atlas` file in `assets/`. Suggested subfolder gr
 
 ```
 assets-src/
-  buttons/        btn_default_up.9.png, btn_accent_over.9.png, etc.
+  buttons/        button_default_up.9.png, button_accent_over.9.png, etc.
   panels/         panel_bg.9.png, card_bg_running.9.png, etc.
   progress/       progress_track.9.png, progress_fill_green.9.png, etc.
   icons/nav/      icon_nav_factory.png, etc.
