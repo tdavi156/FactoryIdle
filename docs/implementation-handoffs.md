@@ -1,956 +1,843 @@
-# FactoryIdle — Phase 1 Implementation Handoffs
+# FactoryIdle — Implementation Handoff Prompts
 
-Each section is a self-contained prompt for a new chat session. The project CLAUDE.md is auto-loaded as context in every session. Each prompt specifies which additional design docs to read. Always follow the workflow rule: present a plan and wait for explicit approval before writing any code.
+Each section is a self-contained prompt for a new Claude chat. The implementing chat has no memory of prior sessions — every prompt includes full context. Steps must be completed in order unless marked as independent.
 
-Package root: `com.github.jacks.factoryIdle`
-Source root: `core/src/main/kotlin/com/github/jacks/factoryIdle/`
-
----
+Steps 1, 3 are complete. Step 2 needs a full redo. Steps 4–15 are new.
 
 ---
 
-## Step 1 — Data Layer
+## Step 2 Redo — ECS: Satisfaction Rate Model
 
-**Paste this into a new chat:**
+You are implementing the core production simulation for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Fleks API notes, and the workflow rule you must follow.
 
----
+**The game in one paragraph:** No spatial world, no belts. All resources flow through a single `GlobalResourcePool: Map<Resource, Float>`. Buildings are ECS entities that consume resources from the pool and produce other resources into it. The core player loop is hand mine → build → automate → balance ratios.
 
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully before starting. Also read `docs/design-systems.md` in full.
+**What already exists (do not recreate):**
+- `data/Enums.kt` — `Resource`, `BuildingType`, `GroupState`, `GroupPriority`, `ResourceCategory`
+- `data/GlobalState.kt` — `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry`
+- `data/RecipeRegistry.kt` — `Recipe` data class, `RecipeRegistry`
+- `data/MilestoneDefinitions.kt` — Phase 1 milestone chain
+- `components/Producer.kt`, `Miner.kt`, `FuelConsumer.kt`, `Building.kt`, `BuildingGroup.kt`
+- `systems/MilestoneSystem.kt` — leave this untouched
+- `systems/MinerSystem.kt` — update for fractional accumulator (see below)
+- `ui/` — skin layer, fully complete, do not touch
+- `screens/GameScreen.kt` — has the ECS world and system registrations; update system list
 
-**What already exists:**
-- `FactoryIdle.kt` — KtxGame<KtxScreen> entry point
-- `screens/GameScreen.kt` — KtxScreen with an empty `configureWorld { }` stub and Scene2D stage
+**What is WRONG and must be replaced:**
+- `components/ResourceBuffer.kt` — **delete this file**
+- `systems/BufferFillSystem.kt` — **delete this file**
+- `systems/ProductionSystem.kt` — **rewrite entirely** (currently reads from ResourceBuffer; wrong model)
+- `systems/FuelSystem.kt` — **rewrite** (currently does buffer drain/top-up; wrong model)
 
-**Your task:** Create the entire data layer. No system logic, no UI, no LibGDX rendering. Pure Kotlin data definitions. Everything else in Phase 1 depends on this step being correct.
+**The correct model — read `docs/design-systems.md` for full spec. Summary:**
 
-Create the following files under `core/src/main/kotlin/com/github/jacks/factoryIdle/`:
+Each building entity declares its consumption rate per resource to the pool (`declaredRates`). A pool tick runs every frame that computes how much of each resource is available, allocates it across priority tiers (HIGHEST first, proportional within tier), and writes `currentSatisfaction` (0.0–1.0) back to each entity. Production output uses fractional accumulation: `fractionalAccumulator += baseOutput × mkMultiplier × currentSatisfaction`. When the accumulator reaches 1.0 or more, whole items are awarded to the pool and the remainder is kept. Cycle timers never change — only output scales with satisfaction.
 
----
+**Specifically build:**
 
-**`data/Enums.kt`**
-- `ResourceCategory` enum: RAW, PROCESSED, INTERMEDIATE, SCIENCE
-- `Resource` enum with `val category: ResourceCategory` constructor param. Phase 1 entries: IRON_ORE(RAW), COAL(RAW), STONE(RAW), IRON_PLATE(PROCESSED). Structured so adding a new resource is a single new enum entry — no other code changes.
-- `BuildingType` enum. Phase 1 entries: STONE_FURNACE, BASIC_MINER. Same extensibility principle.
-- `GroupState` enum: RUNNING, STALLED, FUEL_STARVED, PAUSED, NO_RECIPE
-- `GroupPriority` enum: LOWEST, LOW, NORMAL, HIGH, HIGHEST
-
----
-
-**`data/Components.kt`**
-All ECS components exactly as defined in CLAUDE.md. Import Fleks annotations as needed. `Recipe` is a plain data class — not a component, not registered with ECS.
-
----
-
-**`data/GlobalState.kt`**
-Simple mutable wrappers that live outside ECS. Each wraps a map or set and exposes clean operations — do not expose the raw map directly.
-
-- `GlobalResourcePool` — wraps `MutableMap<Resource, Float>`. Operations: `get(resource)`, `add(resource, amount)`, `subtract(resource, amount)` (floor at 0), `set(resource, amount)`, `has(resource, amount)` (returns Boolean).
-- `LifetimeMiningStats` — wraps `MutableMap<Resource, Float>`. Operations: `add(resource, amount)`, `get(resource)`. Add-only, never subtract.
-- `UnlockRegistry` — wraps `MutableSet<BuildingType>` and `MutableSet<Resource>` separately. Operations: `unlock(resource)`, `unlock(buildingType)`, `isUnlocked(resource)`, `isUnlocked(buildingType)`, `unlockedResources()`, `unlockedBuildingTypes()`.
-- `UnassignedPool` — wraps `MutableMap<BuildingType, Int>`. Operations: `add(type, count)`, `remove(type, count)` (throws if insufficient), `count(type)`, `canRemove(type, count)`.
-
----
-
-**`data/RecipeRegistry.kt`**
-- `RecipeRegistry` — a `Map<BuildingType, List<Recipe>>` initialized with Phase 1 data:
-  - STONE_FURNACE: `[Recipe(inputs = mapOf(IRON_ORE to 2f), outputs = mapOf(IRON_PLATE to 1f), duration = 5f)]`
-  - BASIC_MINER: `emptyList()` — miners use `Miner.assignedResource`, not recipes
-- Provide a `recipesFor(type: BuildingType): List<Recipe>` function
-- This is data-driven: adding a new building type = new map entry, no new code paths
-
----
-
-**`data/MilestoneDefinitions.kt`**
-- `Milestone` data class: `id: String`, `description: String`, `condition: () -> Boolean`, `reward: () -> Unit`
-- Top-level function: `buildPhase1Milestones(pool: GlobalResourcePool, stats: LifetimeMiningStats, unlocks: UnlockRegistry): List<Milestone>`
-
-Returning these 5 milestones (conditions read from `stats`, rewards mutate `unlocks`):
-1. id="start" — condition: always true — reward: unlock IRON_ORE resource
-2. id="coal_unlock" — condition: stats.get(IRON_ORE) >= 10 — reward: unlock COAL resource
-3. id="stone_unlock" — condition: stats.get(COAL) >= 10 && stats.get(IRON_ORE) >= 20 — reward: unlock STONE resource
-4. id="furnace_unlock" — condition: stats.get(IRON_ORE) >= 30 && stats.get(COAL) >= 20 && stats.get(STONE) >= 10 — reward: unlock STONE_FURNACE building type
-5. id="miner_unlock" — condition: stats.get(IRON_PLATE) >= 10 — reward: unlock BASIC_MINER building type
-
-Note on milestone 5: IRON_PLATE should also be tracked in LifetimeMiningStats when produced by buildings (not just hand-mined). ProductionSystem will call `stats.add(IRON_PLATE, amount)` on each production cycle — LifetimeMiningStats tracks all resource gains, not just hand mining despite the name.
-
----
-
-**Acceptance criteria:**
-- `./gradlew core:compileKotlin` passes with zero errors
-- All types match CLAUDE.md component definitions exactly
-- No logic in this step — only data definitions and pure helper functions
-
----
-
----
-
-## Step 2 — ECS Systems
-
-**Paste this into a new chat:**
-
----
-
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-systems.md` in full.
-
-**What already exists:**
-- `data/` package — all enums, components, global state classes, RecipeRegistry, MilestoneDefinitions (Step 1 complete)
-- `screens/GameScreen.kt` — empty `configureWorld { }` stub, stage, show/render/dispose overrides
-
-**Your task:** Implement all 5 ECS systems in the correct order and wire them into GameScreen. After this step, the game simulation runs invisibly — production happens but nothing displays it yet.
-
-The system execution order is load-bearing. Do not reorder. See CLAUDE.md for the full order and rationale.
-
-Create under `core/src/main/kotlin/com/github/jacks/factoryIdle/systems/`:
-
----
-
-**`BufferFillSystem.kt`**
-
-Iterates all entities with `ResourceBuffer`. For each resource in `buffer.capacity`, calculate shortage = capacity - current contents. Take `min(shortage, globalPool.get(resource))` and transfer that amount from global pool to buffer. Do not overfill.
-
-Design note: In Phase 2 this system will sort entities by GroupPriority before iterating. Structure the system so that sort can be dropped in without a rewrite — even if Phase 1 has no groups, the iteration should be over a sortable collection.
-
-Inject: `GlobalResourcePool`
-
----
-
-**`ProductionSystem.kt`**
-
-Iterates entities with `Producer`. Each tick:
-1. If `producer.recipe == null`: set `producer.groupState = NO_RECIPE`, skip
-2. Check if `ResourceBuffer.contents` has enough of each recipe input for one cycle. If not: set `STALLED`, skip
-3. Advance `producer.progress += delta`
-4. If `producer.progress >= recipe.duration`:
-   - Consume inputs from `ResourceBuffer.contents`
-   - Write each output to `GlobalResourcePool` (and `LifetimeMiningStats` — iron plates produced count toward the miner unlock milestone)
-   - Reset `producer.progress = 0f`
-   - Set `producer.groupState = RUNNING`
-
-Inject: `GlobalResourcePool`, `LifetimeMiningStats`
-
----
-
-**`MinerSystem.kt`**
-
-Iterates entities with `Miner`. Each tick:
-1. If `miner.assignedResource == null`: set `miner.groupState = NO_RECIPE`, skip
-2. Check FuelConsumer if present — if `fuelBuffer <= 0`: set `FUEL_STARVED`, skip
-3. Advance `miner.progress += delta`
-4. If `miner.progress >= 4f` (4 seconds per unit):
-   - Add 1f to `GlobalResourcePool` for `miner.assignedResource`
-   - Add 1f to `LifetimeMiningStats` for `miner.assignedResource`
-   - Reset `miner.progress = 0f`
-   - Set `miner.groupState = RUNNING`
-
-Inject: `GlobalResourcePool`, `LifetimeMiningStats`
-
----
-
-**`FuelSystem.kt`**
-
-Iterates entities with `FuelConsumer`. Each tick:
-1. Drain: `fuelConsumer.fuelBuffer -= fuelConsumer.consumeRate * delta`
-2. Clamp: `fuelConsumer.fuelBuffer = max(0f, fuelConsumer.fuelBuffer)`
-3. If `fuelBuffer <= 0`: set FUEL_STARVED on any Producer or Miner component on this entity
-4. Top up: if `fuelBuffer < maxFuelBuffer` (e.g. 6f) and global pool has the fuel resource: take `min(needed, available)` from global pool and add to `fuelBuffer`
-
-Note: FuelSystem runs after ProductionSystem and MinerSystem. Its FUEL_STARVED setting may override a STALLED state set by production — this is correct. FUEL_STARVED is the more specific diagnosis.
-
-Inject: `GlobalResourcePool`
-
----
-
-**`MilestoneSystem.kt`**
-
-Holds `private val pending: MutableList<Milestone>` initialized at construction time.
-
-Each tick: iterate a copy of `pending`. For each milestone, call `milestone.condition()`. If true: call `milestone.reward()`, remove from `pending`. Milestones are never re-added once fired.
-
-Constructor takes the pending list: `class MilestoneSystem(milestones: List<Milestone>)`
-
-Inject: nothing (conditions and rewards are closures that already capture their dependencies)
-
----
-
-**Wire into `GameScreen.kt`:**
-
-Add class-level global state properties:
+`components/ProductionSatisfaction.kt` — new component:
 ```kotlin
-private val globalResourcePool  = GlobalResourcePool()
-private val lifetimeMiningStats = LifetimeMiningStats()
-private val unlockRegistry      = UnlockRegistry()
-private val recipeRegistry      = RecipeRegistry()
-```
-
-Update `configureWorld { }`:
-```kotlin
-private val entityWorld: World = configureWorld {
-    injectables {
-        add(globalResourcePool)
-        add(lifetimeMiningStats)
-        add(unlockRegistry)
-        add(recipeRegistry)
-    }
-    systems {
-        add(BufferFillSystem())
-        add(ProductionSystem())
-        add(MinerSystem())
-        add(FuelSystem())
-        add(MilestoneSystem(buildPhase1Milestones(globalResourcePool, lifetimeMiningStats, unlockRegistry)))
-    }
+data class ProductionSatisfaction(
+    val declaredRates: MutableMap<Resource, Float> = mutableMapOf(),
+    var currentSatisfaction: Float = 1f,
+    var fractionalAccumulator: Float = 0f
+) : Component<ProductionSatisfaction> {
+    override fun type() = ProductionSatisfaction
+    companion object : ComponentType<ProductionSatisfaction>()
 }
 ```
 
-Update `GameScreen.render(delta: Float)` to call `entityWorld.update(delta)` before `stage.act(delta)`.
+`systems/PoolTickSystem.kt` — replaces `BufferFillSystem`. This system must access all entities globally (not one at a time), so implement it as an `IntervalSystem` (or override `onTick()`) rather than an `IteratingSystem`. Each tick:
+1. For each resource R, gather all active (non-paused) entities that consume R (check their `ProductionSatisfaction.declaredRates`)
+2. Compute `inboundRate[R]` = sum of output rates of all producers of R (from global pool tracking or by iterating Producer entities)
+3. For each priority tier HIGHEST → LOWEST: compute tier demand, compare to remaining supply, set satisfaction proportionally, subtract from remaining. If remaining = 0, all lower tiers get satisfaction = 0
+4. Set each entity's `currentSatisfaction = min(satisfaction[R] for R in recipe.inputs)`
+5. Skip paused entities (check `BuildingGroup.paused` in Phase 2)
 
----
+`systems/ProductionSystem.kt` — rewrite:
+- Family: `all(Producer, ProductionSatisfaction)`
+- Skip if paused (Phase 2 BuildingGroup check) or `recipe == null` (set `NO_RECIPE`)
+- Advance `producer.progress += deltaTime`
+- On cycle complete (`progress >= recipe.duration`): compute `fractionalAccumulator += recipe.baseOutput × currentSatisfaction`; award `floor(fractionalAccumulator)` items to pool; subtract awarded amount from accumulator; reset `producer.progress = 0f`; set `RUNNING` if satisfaction > 0, `STALLED` if satisfaction = 0
+- Do NOT reset progress if inputs are missing — the cycle timer always runs
 
-**Verification (temporary test code, remove before committing):**
+`systems/FuelSystem.kt` — rewrite:
+- Each `FuelConsumer` entity declares its fuel consumption rate in `ProductionSatisfaction.declaredRates` for the fuel resource (Coal in Phase 1)
+- FuelSystem runs after PoolTickSystem. It reads `currentSatisfaction` for the fuel resource specifically
+- If fuel satisfaction = 0: set `FUEL_STARVED` on any `Producer` or `Miner` on this entity
+- FuelSystem skips paused entities
 
-In `GameScreen.show()`, after wiring, add a temporary test that:
-1. Adds 100f IRON_ORE and 100f COAL to globalResourcePool
-2. Creates a Stone Furnace entity with Producer (recipe set to iron plate recipe), FuelConsumer (coal, 1/30f rate), ResourceBuffer (capacity: IRON_ORE→6f, COAL→6f)
-3. Logs globalResourcePool every 5 seconds
+`systems/MinerSystem.kt` — update:
+- Add `ProductionSatisfaction` to family
+- Miners have no recipe input (they produce raw resources), so their `currentSatisfaction` = fuel satisfaction only
+- Apply fractional accumulation: `fractionalAccumulator += baseOutput × currentSatisfaction`; award whole items to pool
 
-Confirm iron plates accumulate and coal depletes. Then delete the test code.
+**Fix in `data/Enums.kt`:**
+- Rename `ResourceCategory.INTERMEDIATE` to `ResourceCategory.COMPONENT`
+- Add `COPPER_ORE(RAW)` and `COPPER_PLATE(PROCESSED)` to `Resource` enum (needed by research system later; safe to add now)
 
-**Acceptance criteria:**
-- `./gradlew core:compileKotlin` passes
-- Test confirms production and fuel drain work correctly
-- All test code removed before final commit
+**Update `screens/GameScreen.kt`:**
+- Remove `BufferFillSystem()` from systems block
+- Add `PoolTickSystem()` as the first system
+- Every entity that was getting a `ResourceBuffer` component should now get a `ProductionSatisfaction` component instead
+- Recompute `declaredRates` in `ProductionSatisfaction` from the entity's recipe: `rate[resource] = inputs_per_cycle[resource] / recipe.duration`
 
----
-
----
-
-## Step 3 — Skin & Asset Foundation
-
-**Paste this into a new chat:**
-
----
-
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-assets.md` in full — it contains every asset name, size, color, and the complete font pipeline.
-
-**What already exists:**
-- `data/` package — all enums and global state (Step 1 complete)
-- `FactoryIdle.kt` — KtxGame entry point
-- `screens/GameScreen.kt` — KtxScreen
-
-**Your task:** Set up the Skin system, define all style enums, and wire font loading. The skin must be fully functional before any UI can be built. If final art assets are not yet available, use solid-color placeholder drawables (LibGDX `Pixmap`-generated textures) — do not block on art. The enum names and style names must match `docs/design-assets.md` exactly so the UI steps can reference them without changes.
-
-Create under `core/src/main/kotlin/com/github/jacks/factoryIdle/ui/`:
-
----
-
-**`ui/Drawables.kt`**
-Enum of all drawable asset names. Every nine-patch and icon in `docs/design-assets.md` gets an entry. These are the keys used to look up drawables in the skin.
-
-```kotlin
-enum class Drawables {
-    // Buttons
-    BUTTON_DEFAULT_UP, BUTTON_DEFAULT_OVER, BUTTON_DEFAULT_DOWN, BUTTON_DEFAULT_DISABLED,
-    BUTTON_ACCENT_UP, BUTTON_ACCENT_OVER, BUTTON_ACCENT_DOWN, BUTTON_ACCENT_DISABLED,
-    BUTTON_DANGER_UP, BUTTON_DANGER_OVER, BUTTON_DANGER_DOWN, BUTTON_DANGER_DISABLED,
-    BUTTON_NAVIGATION_UP, BUTTON_NAVIGATION_OVER, BUTTON_NAVIGATION_DOWN, BUTTON_NAVIGATION_SELECTED,
-    // Panels
-    PANEL_BG, PANEL_DARK, PANEL_INSET, TOOLTIP_BG, RESOURCE_BAR_BG,
-    // Cards
-    CARD_BG_RUNNING, CARD_BG_STALLED, CARD_BG_FUEL_STARVED, CARD_BG_PAUSED, CARD_BG_IDLE,
-    // Progress
-    PROGRESS_TRACK, PROGRESS_FILL_GREEN, PROGRESS_FILL_AMBER, PROGRESS_FILL_BLUE, PROGRESS_FILL_RED,
-    // Pixels
-    PX_DIVIDER, PX_WHITE, PX_BLACK,
-    // Status dots
-    STATUS_RUNNING, STATUS_STALLED, STATUS_FUEL_STARVED, STATUS_PAUSED, STATUS_IDLE,
-    // Navigation icons
-    ICON_NAVIGATION_FACTORY, ICON_NAVIGATION_POWER, ICON_NAVIGATION_RESEARCH, ICON_NAVIGATION_PROGRESS, ICON_NAVIGATION_SETTINGS,
-    // Resource icons (sm = 20px, md = 36px)
-    ICON_RSC_IRON_ORE_SM, ICON_RSC_IRON_ORE_MD,
-    ICON_RSC_COAL_SM, ICON_RSC_COAL_MD,
-    ICON_RSC_STONE_SM, ICON_RSC_STONE_MD,
-    ICON_RSC_IRON_PLATE_SM, ICON_RSC_IRON_PLATE_MD,
-    // Building icons and art
-    ICON_BLD_STONE_FURNACE, ICON_BLD_BASIC_MINER,
-    BLD_ART_STONE_FURNACE, BLD_ART_BASIC_MINER,
-}
-```
-
----
-
-**`ui/Buttons.kt`**
-Enum of button style names used in the skin.
-
-```kotlin
-enum class Buttons {
-    DEFAULT, ACCENT, DANGER, NAVIGATION;
-    operator fun invoke() = name.lowercase()
-}
-```
-
----
-
-**`ui/Labels.kt`**
-Enum of label style names.
-
-```kotlin
-enum class Labels {
-    HEADING, BODY, BODY_BOLD, SMALL, DIM;
-    operator fun invoke() = name.lowercase()
-}
-```
-
----
-
-**`ui/Fonts.kt`**
-Font definitions and loading. See `docs/design-assets.md` for the full loading pattern.
-
-```kotlin
-enum class Fonts(
-    val skinKey: String,
-    val fontPath: String,
-    val atlasRegionKey: String,
-    val scaling: Float = 1f
-) {
-    HEADING   ("font_heading",   "fonts/heading.fnt",   "font_heading"),
-    BODY      ("font_body",      "fonts/body.fnt",      "font_body"),
-    BODY_BOLD ("font_body_bold", "fonts/body_bold.fnt", "font_body_bold"),
-    SMALL     ("font_small",     "fonts/small.fnt",     "font_small"),
-    MONO      ("font_mono",      "fonts/mono.fnt",      "font_mono"),
-}
-```
-
-Include the `loadFonts(skin: Skin)` function and `operator fun Skin.get(font: Fonts)` extension as shown in `docs/design-assets.md`. If font files are not yet available, create a fallback that uses `BitmapFont()` (the default LibGDX font) for all entries so the skin does not crash.
-
----
-
-**`ui/GameSkin.kt`**
-The skin builder. Responsible for:
-1. Loading the texture atlas (if it exists at `assets/ui.atlas`) OR generating placeholder drawables via `Pixmap`
-2. Setting Linear texture filtering on the atlas
-3. Defining all button styles using KTX style DSL — each style references drawables by `Drawables` enum
-4. Defining label styles (font + color per Labels enum)
-5. Loading fonts via `loadFonts(skin)`
-6. Setting `Scene2DSkin.defaultSkin = skin`
-
-**Placeholder strategy (when atlas is not yet available):**
-Generate solid-color `Pixmap` textures and add them to the skin manually. Use the colors from `docs/design-assets.md`. For example:
-```kotlin
-fun createPlaceholder(color: Color, width: Int = 16, height: Int = 16): TextureRegionDrawable {
-    val pixmap = Pixmap(width, height, Pixmap.Format.RGBA8888)
-    pixmap.setColor(color)
-    pixmap.fill()
-    val texture = Texture(pixmap)
-    pixmap.dispose()
-    return TextureRegionDrawable(texture)
-}
-```
-
-Button styles must have pressedOffsetX = 1f, pressedOffsetY = -1f for the physical press feel.
-
----
-
-**Wire into `FactoryIdle.kt`:**
-
-In `create()`, before `addScreen(GameScreen(this))`:
-```kotlin
-GameSkin.initialize()   // builds skin and sets Scene2DSkin.defaultSkin
-```
-
-`GameSkin.initialize()` must be called before any screen or view is constructed.
-
----
-
-**Acceptance criteria:**
-- `./gradlew lwjgl3:run` launches without skin-related errors
-- A test button (added temporarily to GameScreen.init) renders with visible up/over/down states
-- All enum names match `docs/design-assets.md` exactly
-- Test code removed before committing
-
----
+**Compile check:** Run `./gradlew core:compileKotlin` when done. Fix all errors before finishing.
 
 ---
 
 ## Step 4 — UI Shell
 
-**Paste this into a new chat:**
+You are implementing the navigation shell for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
 
----
+**What already exists (do not recreate):**
+- Full skin layer: `ui/GameSkin.kt`, `ui/Drawables.kt`, `ui/Buttons.kt`, `ui/Labels.kt`, `ui/Fonts.kt`
+- `screens/GameScreen.kt` — has a stage, ECS world, and a nearly empty `stage.actors { }` block. You will restructure the actors block.
+- All ECS systems and components from Step 2 — do not touch
 
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-ui.md` in full — it contains the layout diagram, navigation structure, GameScreen init pattern, and Scene2D layout rules.
+**What to build:**
 
-**What already exists:**
-- `data/` package — all enums, components, global state (Step 1)
-- `systems/` package — all 5 ECS systems (Step 2)
-- `ui/` package — Skin, Drawables, Buttons, Labels, Fonts enums (Step 3)
-- `screens/GameScreen.kt` — currently has a basic init; this step rewrites it
-
-**Your task:** Build the UI shell — the root layout, navigation model, nav sidebar, and stub content views. After this step the game launches showing a working nav sidebar that switches between placeholder views. No real content yet.
-
-Create under `core/src/main/kotlin/com/github/jacks/factoryIdle/`:
-
----
-
-**`ui/PropertyChangeSource.kt`**
-Base class for all UI models. Provides a simple observer pattern:
-```kotlin
-abstract class PropertyChangeSource {
-    private val listeners = mutableListOf<() -> Unit>()
-    fun addListener(listener: () -> Unit) { listeners.add(listener) }
-    protected fun notifyListeners() { listeners.forEach { it() } }
-}
+Read `docs/design-ui.md` for the full layout spec. The layout is:
+```
+┌─────────────────────────────────────────────┐
+│  Resource Bar (full width, ~52px tall)       │
+├──────┬──────────────────────────────────────┤
+│ Nav  │  Content Stack (one view visible)     │
+│ ~64px│                                       │
+└──────┴──────────────────────────────────────┘
 ```
 
----
-
 **`ui/models/NavigationModel.kt`**
-Manages which content view is currently visible. Holds references to all registered content views (as `Actor` or `Table`). Exposes `show(view: Table)` which sets all views invisible then sets the target visible. Views register themselves on construction or are passed in at GameScreen init time.
-
----
+Manages which content view is currently visible. Holds references to all registered content views as `Actor`. Exposes `show(view: Table)` which sets all views invisible then makes the target visible. Views are registered via `register(vararg views: Table)`.
 
 **`ui/views/NavSidebarView.kt`**
-A `Table` subclass. Vertical column of icon buttons, one per nav destination. Uses `button_navigation_*` skin styles. The active view's button uses the `BUTTON_NAVIGATION_SELECTED` drawable. Clicking a button calls `navigationModel.show(targetView)` and updates the selected state. Icons use the `ICON_NAVIGATION_*` drawables.
+A `Table` subclass. Vertical column of icon buttons, one per nav destination, full height below the resource bar. Uses `Buttons.NAVIGATION()` skin style for each button. The active view's button uses the checked state (which maps to `BUTTON_NAVIGATION_SELECTED` drawable in the skin). Clicking a button calls `navigationModel.show(targetView)`. Nav buttons in order: Factory, Power, Research, Progress, Settings. Uses `ICON_NAVIGATION_*` drawables for button icons. Icons are 32×32; buttons fill the ~64px sidebar width.
 
----
-
-**Stub content views (empty Tables with a centered label — real content in later steps):**
-- `ui/views/FactoryView.kt` — label: "Factory" (Step 6 will replace the content)
+**Stub content views** — each a `Table` subclass with a centered `Label` only. Real content comes in later steps.
+- `ui/views/FactoryView.kt` — label: "Factory"
 - `ui/views/PowerView.kt` — label: "Power — Coming Soon"
 - `ui/views/ResearchView.kt` — label: "Research — Coming Soon"
 - `ui/views/ProgressView.kt` — label: "Progress — Coming Soon"
 - `ui/views/SettingsView.kt` — label: "Settings — Coming Soon"
 
----
+**Stub resource bar** — `ui/views/ResourceBarView.kt` — a `Table` subclass with a placeholder label "Resource Bar" for now. Real content in Step 5.
 
-**Rewrite `screens/GameScreen.kt`** to the clean pattern from `docs/design-ui.md`:
+**`screens/GameScreen.kt` restructure** — follow the pattern in `docs/design-ui.md` exactly:
+- All models and views are class-level properties, not created inside the DSL block
+- Use `setFillParent(true)` on the root table only
+- Stack cell gets `.prefWidth(0f).minWidth(0f)`
+- `navigationModel.show(factoryView)` sets the default tab after the stage is built
+- `Gdx.input.inputProcessor = stage` in `show()`
 
+**Constants** to define in GameScreen companion object:
 ```kotlin
-class GameScreen(private val game: FactoryIdle) : KtxScreen {
-
-    // Global state (used by models)
-    private val globalResourcePool  = GlobalResourcePool()
-    private val lifetimeMiningStats = LifetimeMiningStats()
-    private val unlockRegistry      = UnlockRegistry()
-    private val recipeRegistry      = RecipeRegistry()
-
-    private val stage = Stage(ScreenViewport())
-
-    private val entityWorld: World = configureWorld { /* ... as wired in Step 2 ... */ }
-
-    // Navigation
-    private val navigationModel = NavigationModel()
-
-    // Content views (class-level — no nullable vars)
-    private val factoryView  = FactoryView()
-    private val powerView    = PowerView()
-    private val researchView = ResearchView()
-    private val progressView = ProgressView()
-    private val settingsView = SettingsView()
-
-    init {
-        navigationModel.register(factoryView, powerView, researchView, progressView, settingsView)
-
-        stage.actors {
-            table {
-                setFillParent(true)
-
-                // Resource bar row — placeholder for Step 5
-                row()
-
-                // Main content row
-                table { cell ->
-                    cell.expand().fill()
-
-                    add(NavSidebarView(navigationModel, factoryView, powerView, researchView, progressView, settingsView))
-                        .fillY().width(64f)
-
-                    stack { stackCell ->
-                        add(factoryView)
-                        add(powerView)
-                        add(researchView)
-                        add(progressView)
-                        add(settingsView)
-                        stackCell.expand().fill().prefWidth(0f).minWidth(0f)
-                    }
-                }
-            }
-        }
-
-        navigationModel.show(factoryView)
-    }
-
-    override fun show() { Gdx.input.inputProcessor = stage }
-    override fun render(delta: Float) {
-        entityWorld.update(delta)
-        stage.act(delta)
-        stage.draw()
-    }
-    override fun resize(width: Int, height: Int) { stage.viewport.update(width, height, true) }
-    override fun dispose() { entityWorld.dispose(); stage.dispose() }
-
-    companion object { val log = logger<FactoryIdle>() }
-}
+const val RESOURCE_BAR_HEIGHT = 52f
+const val NAV_WIDTH = 64f
 ```
 
----
-
-**Acceptance criteria:**
-- `./gradlew lwjgl3:run` launches showing nav sidebar with 5 icon buttons
-- Clicking each nav button switches the content area to the correct placeholder view
-- `stage.isDebugAll = true` confirms layout fills 1440×900 correctly, stack cell is not forcing an unexpected size
-- Debug rendering removed before committing
-
----
+**Compile check:** Run `./gradlew core:compileKotlin` when done and fix all errors.
 
 ---
 
 ## Step 5 — Resource Bar & Hand Mining
 
-**Paste this into a new chat:**
-
----
-
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-ui.md` and `docs/design-systems.md` in full.
+You are implementing the resource bar UI for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
 
 **What already exists:**
-- `data/` package — all enums, global state, milestones (Step 1)
-- `systems/` package — all 5 ECS systems running (Step 2)
-- `ui/` package — Skin, enums, PropertyChangeSource (Step 3)
-- `screens/GameScreen.kt` — full shell with nav sidebar and content stack (Step 4)
-- Stub `FactoryView`, `PowerView`, etc. in place
+- Full navigation shell from Step 4: `GameScreen`, `NavigationModel`, `NavSidebarView`, all view stubs
+- `ResourceBarView.kt` — stub with placeholder label; replace this entirely
+- Global state: `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry` (all injected into GameScreen)
+- Skin with all drawables, fonts, button styles
 
-**Your task:** Implement the resource bar (always-visible top strip) and hand mining widget. After this step, the player can hand-mine resources and watch them appear and accumulate in the resource bar.
-
----
+**Read `docs/design-ui.md` (Resource Bar section) and `docs/design-systems.md` (Hand Mining section) before designing anything.**
 
 **`ui/models/ResourceBarModel.kt`**
 
-Extends `PropertyChangeSource`. Holds references to `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry`.
+Constructed in `GameScreen` with references to `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry`. Called from `GameScreen.render()` via `update(delta)`.
 
 Responsibilities:
-- Exposes the list of currently visible resources per `ResourceCategory` (filtered by unlock and display rules from `docs/design-ui.md`)
-- Calculates per-resource rates using a rolling window: maintain a `Map<Resource, ArrayDeque<Pair<Float, Float>>>` (timestamp, delta-amount). Each tick, add the latest observation, prune entries older than 10 seconds, multiply sum by 6 to get per-minute rate.
-- Exposes `displayMode: DisplayMode` (COUNT or RATE) with a toggle function
-- Calls `notifyListeners()` on meaningful changes (new resource visible, amount changes, rate changes)
+- Track which RAW resources are unlocked (from `UnlockRegistry`) — expose for hand mining button list
+- Track all resources that are visible (unlocked AND quantity > 0 OR actively produced/consumed)
+- Maintain a rolling rate window: ring buffer of 60 samples taken 1 second apart. Each sample is a snapshot of the pool amounts. Rate = `(currentSnapshot[R] - sampleFrom60sAgo[R]) / 60.0`. Expose as `getRate(resource): Float`
+- Expose `getAmount(resource): Float` directly from pool
+- Expose `displayMode: DisplayMode` (COUNT or RATE) toggled by the player
+- Expose `isHandMining(resource): Boolean` and `handMiningProgress(resource): Float` (0.0–1.0 of the 2s cycle)
 
-```kotlin
-enum class DisplayMode { COUNT, RATE }
-```
+Hand mining state lives in the model: a `Map<Resource, Float>` tracking cycle progress per resource. When player starts mining: set `cycleProgress[R] = 0f`. Each `update(delta)`: advance all in-progress cycles. When a cycle reaches 2.0s: add 1 to `GlobalResourcePool`, add 1 to `LifetimeMiningStats`, reset progress (auto-idles — does not restart). Hand mining never uses ECS.
 
----
+**`ui/views/ResourceBarView.kt`** (replace stub)
 
-**`ui/views/ResourceBarView.kt`**
+Left side — Hand Mining Widget:
+- One `TextButton` per unlocked RAW resource (from model)
+- Button shows resource name; below or within it, a thin progress bar (use `PROGRESS_FILL_GREEN` drawable) showing current 2s mining cycle
+- Clicking a button that is idle starts a new cycle; clicking mid-cycle has no effect (already running)
+- Buttons never disabled — hand mining is always the escape hatch
 
-A `Table` subclass. Displays the resource bar and hand mining widget side by side:
-- Left side: `HandMiningWidget` (built below)
-- Right side: resource display area — resources grouped by `ResourceCategory`, each shown as icon + name + amount/rate. Category headers are collapsible.
-- Top-right: small toggle button switching `DisplayMode` on the model
+Right side — Resource Display:
+- Resources grouped by category: RAW, PROCESSED, COMPONENT, SCIENCE
+- Each category is collapsible (toggle arrow, player preference stored in model)
+- Only show categories that have at least one visible resource
+- Each entry: small icon (20×20, `ICON_RSC_*` drawable) + name label + amount or rate label
+- Count mode: `Iron Ore  247` — use `BODY` font for name, `BODY_BOLD` for number
+- Rate mode: `Iron Ore  +12.4/min` — positive in `#27ae60` green, negative in `#c0392b` red, zero in dim text color
+- Toggle button on the bar switches between COUNT and RATE modes
 
-Binds to `ResourceBarModel` in `init`. Adds a listener that calls `refresh()` when the model notifies changes. `refresh()` rebuilds the resource display from current model data without recreating the hand mining widget.
+Display mode toggle: a small `TextButton` using `Buttons.DEFAULT()` style; label changes to show current mode ("Count" / "Rate").
 
-Height: ~52px. Spans full width.
+The model calls `onPropertyChange` callbacks (or equivalent) when data changes. The view subscribes and updates labels. Do not poll the model from `act()` — use change callbacks.
 
----
-
-**`ui/views/HandMiningWidget.kt`**
-
-A `Table` subclass. One button per unlocked RAW resource. Each button:
-- Shows the resource icon (small, 20px) and name
-- Has a `ProgressBar` below it showing progress through the current 2s mining cycle
-- On click: if not already mining this resource, starts the cycle
-- On cycle complete (2s elapsed): adds 1f to `GlobalResourcePool` and `LifetimeMiningStats` for that resource, notifies `ResourceBarModel`, then idles (player must click again or it auto-idles)
-- Multiple resources can have simultaneous active cycles (clicking coal while iron is mid-cycle is valid)
-
-The widget observes `UnlockRegistry` (or is refreshed by `ResourceBarModel`) so it adds new buttons when Coal and Stone are unlocked via milestones.
+**Compile check:** `./gradlew core:compileKotlin` when done.
 
 ---
 
-**Wire into `GameScreen.kt`:**
+## Step 6 — Factory View (Phase 1)
 
-Add class-level:
-```kotlin
-private val resourceBarModel = ResourceBarModel(globalResourcePool, lifetimeMiningStats, unlockRegistry)
-private val resourceBarView  = ResourceBarView(resourceBarModel)
-```
-
-In `init`, add the resource bar to the root table before the main content row:
-```kotlin
-add(resourceBarView).expandX().fillX().height(52f)
-row()
-```
-
-In `render()`, after `entityWorld.update(delta)`, tick the `ResourceBarModel` to update rates:
-```kotlin
-resourceBarModel.tick(delta)
-stage.act(delta)
-stage.draw()
-```
-
----
-
-**Acceptance criteria:**
-- Resource bar is visible at the top on all nav views
-- Iron Ore button appears on launch; clicking it mines 1 ore every 2 seconds (progress bar shows cycle)
-- After 10 lifetime iron ore, Coal button appears without restart
-- After 10 coal + 20 iron ore lifetime, Stone button appears
-- Toggle button switches between count display (e.g. "47") and rate display (e.g. "+12.4/min")
-- Rate values are stable (rolling window), not jumpy per-tick numbers
-
----
-
----
-
-## Step 6 — Factory View
-
-**Paste this into a new chat:**
-
----
-
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-ui.md` and `docs/design-buildings.md` in full.
+You are implementing the factory view UI for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
 
 **What already exists:**
-- All data, systems, skin, UI shell, resource bar, and hand mining (Steps 1–5 complete)
-- `FactoryView.kt` is currently a stub with a placeholder label — this step replaces its content
-- Building entities are created by `ConstructionManager` (Step 7) — for this step, wire the UI so it's ready to display whatever entities exist, and expose a `requestBuild(type)` callback that Step 7 will connect
+- Navigation shell (Step 4), Resource Bar (Step 5) — do not touch
+- `FactoryView.kt` — stub table with "Factory" label; replace this
+- ECS world with `Producer`, `Miner`, `FuelConsumer`, `ProductionSatisfaction` components on building entities
+- `GroupState` enum: `RUNNING`, `STALLED`, `FUEL_STARVED`, `PAUSED`, `NO_RECIPE`
+- `Drawables` enum: `STATUS_RUNNING`, `STATUS_STALLED`, `STATUS_FUEL_STARVED`, `STATUS_PAUSED`, `STATUS_IDLE`, `CARD_BG_*`, `ICON_BLD_*`, `ICON_RSC_*` — all registered in skin
+- Skin: `Buttons.DEFAULT()`, `Buttons.ACCENT()`, `Buttons.DANGER()`, `Labels.BODY()`, `Labels.BODY_BOLD()`, `Labels.SMALL()`, `Labels.HEADING()`
 
-**Your task:** Build the full Phase 1 Factory view — build menu on the left, building list on the right, and a detail panel for assigning recipes/resources.
-
----
+**Read `docs/design-ui.md` (Factory View section), `docs/design-buildings.md`, `docs/design-systems.md`, and `docs/design-assets.md` before designing anything.**
 
 **`ui/models/FactoryModel.kt`**
 
-Extends `PropertyChangeSource`. Holds references to `GlobalResourcePool`, `UnlockRegistry`, `RecipeRegistry`, `UnassignedPool`, and the Fleks `World`.
+Constructed in GameScreen with access to the ECS world, `GlobalResourcePool`, and `UnlockRegistry`. Called each render tick to sync ECS state to UI data.
 
-Responsibilities:
-- Exposes the list of unlocked building types with their costs and whether the player can currently afford them
-- Exposes the list of all placed building entities with their current state (type, recipe/resource assignment, `GroupState`)
-- Exposes construction queue state (current item and remaining time) — populated by `ConstructionManager` in Step 7; for now just expose an observable slot
-- `requestBuild(type: BuildingType)` — callback slot that Step 7 wires up; call it from the build button
-- `assignRecipe(entity: Entity, recipe: Recipe)` — sets the recipe on a Producer entity, notifies listeners
-- `assignResource(entity: Entity, resource: Resource)` — sets the resource on a Miner entity, notifies listeners
-- Calls `notifyListeners()` when any observable data changes
+Exposes:
+- List of unlocked building types with their cost and whether the player can currently afford them
+- List of placed building entities with their current state: `groupState`, `currentSatisfaction`, assigned recipe/resource, fuel state
+- Callbacks when any building's state changes (for view refresh)
 
----
+**`ui/views/FactoryView.kt`** (replace stub)
 
-**`ui/views/FactoryView.kt`** (replace the stub)
+Two-panel horizontal split:
 
-A `Table` subclass. Two-panel horizontal layout:
-- Left panel (~280px fixed width): `BuildMenuView`
-- Right panel (fills remaining): `BuildingListView`
+**Left Panel (~280px wide) — Build Menu:**
+- `panel_bg` nine-patch background
+- Scrollable list of unlocked building types
+- Each entry: building icon (`ICON_BLD_*`, 32×32) + building name + cost breakdown (resource icon + amount per cost item)
+- If unaffordable: cost labels in `#c0392b` red, build button disabled (uses `disabled` style)
+- Build button: `Buttons.ACCENT()` style, labeled "Build". For now (Step 7 not done yet), clicking shows a placeholder "Construction coming in Step 7" log message — do NOT wire actual construction yet
+- Below the button list: show current unassigned count per building type if > 0: `"Basic Miners: 3 unassigned"` in `Labels.SMALL()`/dim color
 
-Both panels are created at class level and added to the table. Binds to `FactoryModel`.
+**Right Panel — Building List:**
+- `panel_dark` nine-patch background
+- Scrollable list of individual building cards (Phase 1 — one card per ECS entity)
+- Empty state: `"No buildings yet. Build your first one →"` centered label pointing left toward build menu
 
----
+**Building Card Widget** (each card is a Table):
+- Background: `CARD_BG_RUNNING/STALLED/FUEL_STARVED/PAUSED/IDLE` nine-patch — chosen by `groupState`
+- Building type icon: `ICON_BLD_*`, 32×32, left side
+- Right side stacked: building type name in `Labels.BODY()`, assigned recipe/resource in `Labels.SMALL()` (or "No recipe" in dim)
+- Status dot: `STATUS_*` drawable, 12×12, bottom-left of card
+- Satisfaction bar: thin horizontal bar below the card content area. Width scales with `currentSatisfaction`. Color: green at 100%, amber at 60–99%, orange at 1–59%, hidden/absent at 0% or STALLED
+- Click on card: opens an inline detail panel replacing the card list (or a side panel — your choice, keep it simple for Phase 1)
 
-**`ui/views/BuildMenuView.kt`**
+**Inline Detail Panel** (shown when a building card is clicked):
+- Building name label + back button to return to list
+- Recipe/resource picker: shows available recipes for this building type from `RecipeRegistry`; player taps one to assign; updates the entity's `Producer.recipe` and triggers `declaredRates` recomputation in `ProductionSatisfaction`
+- Current state label: e.g. "RUNNING at 87%" or "STALLED — waiting for Iron Ore"
+- Per-input satisfaction breakdown: one row per input: icon + name + "12.4/s available, 24.0/s needed (50%)"
+- Fuel state (if `FuelConsumer`): "Fuel: Coal — OK" or "FUEL STARVED"
+- Pause toggle button: `Buttons.DEFAULT()` style. Pausing sets `BuildingGroup.paused = true` and zeroes `declaredRates`
 
-A `Table` subclass inside a `ScrollPane`. For each unlocked `BuildingType`:
-- Building icon (32px) + name label
-- Cost breakdown (e.g. "5 Stone") in dim text
-- Build button: active (default style) if affordable, disabled style if not
-- Construction queue indicator below the button: if a building is currently being constructed, show a `ProgressBar` with remaining time and "Building... X of Y" text
-
-Clicking an active Build button calls `factoryModel.requestBuild(type)`. The button greys out immediately after clicking (construction is now queued). Affordability re-checks each time the model notifies.
-
-Building types appear only when `UnlockRegistry.isUnlocked(type)` is true. The view refreshes when the model notifies.
-
----
-
-**`ui/views/BuildingListView.kt`**
-
-A `Table` inside a `ScrollPane`. Displays all placed building entities from `FactoryModel`. Each row shows:
-- Building type icon (32px)
-- Building type name
-- Assignment label: recipe name (for furnaces) or resource name (for miners), or "— Unassigned —" in dim text if nothing assigned
-- `GroupState` status dot (12px, colored per state using the `STATUS_*` drawables)
-
-Clicking a row opens `BuildingDetailPanel` for that entity. The list refreshes when the model notifies.
-
----
-
-**`ui/views/BuildingDetailPanel.kt`**
-
-An overlay `Table` (added to the stage at a high z-index, not to the content stack) that appears when a building row is clicked.
-
-Contains:
-- Building type name header
-- If `Producer`: a scrollable list of available recipes from `RecipeRegistry.recipesFor(type)`. Each recipe shown as: output icon → output name, input icons + amounts, duration. Clicking a recipe calls `factoryModel.assignRecipe(entity, recipe)` and closes the panel.
-- If `Miner`: a list of currently unlocked RAW resources from `UnlockRegistry`. Each shown as icon + name. Clicking calls `factoryModel.assignResource(entity, resource)` and closes the panel.
-- A "Close" button (danger or default style)
-- Dark semi-transparent background covering the content area
-
----
-
-**Wire into `GameScreen.kt`:**
-```kotlin
-private val factoryModel = FactoryModel(globalResourcePool, unlockRegistry, recipeRegistry, unassignedPool, entityWorld)
-private val factoryView  = FactoryView(factoryModel)
-```
-
-Replace the stub `FactoryView()` with `factoryView`. Add the detail panel actor to the stage directly (not the content stack) so it overlays everything.
-
----
-
-**Acceptance criteria:**
-- Factory view shows build menu on the left and an empty building list on the right
-- Stone Furnace entry appears in build menu after furnace milestone fires; is greyed until player has 5 stone
-- Building list shows any entities created manually in code (for testing — actual construction wired in Step 7)
-- Clicking a building row opens the detail panel; selecting a recipe/resource assigns it and closes the panel
-- Status dots update in real time as entities change state
-
----
+**Compile check:** `./gradlew core:compileKotlin` when done.
 
 ---
 
 ## Step 7 — Construction System
 
-**Paste this into a new chat:**
-
----
-
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-systems.md` (Construction section) and `docs/design-buildings.md` in full.
+You are implementing the construction system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
 **What already exists:**
-- All data, systems, skin, and UI (Steps 1–6 complete)
-- `FactoryModel.requestBuild(type)` is a callback slot waiting to be wired
-- `FactoryModel` observes a construction queue state that is currently empty
+- Factory view from Step 6 — build buttons exist but show placeholder messages; wire them in this step
+- Full ECS world with `PoolTickSystem`, `ProductionSystem`, `MinerSystem`, `FuelSystem`, `MilestoneSystem`
+- `GlobalResourcePool`, `UnlockRegistry`, `RecipeRegistry` available in GameScreen
+- `data/Enums.kt` — `BuildingType` enum
 
-**Your task:** Implement the construction queue and manager that connect the Build button to actual ECS entity creation.
+**Read `docs/design-systems.md` (Construction System and Phase 1 Buildings sections) and `docs/design-buildings.md` before designing.**
 
----
+**`data/ConstructionQueue.kt`**
 
-**`construction/ConstructionEntry.kt`**
 ```kotlin
 data class ConstructionEntry(
     val type: BuildingType,
-    val totalTime: Float,
     var remainingTime: Float
 )
-```
 
-Construction times (tune during testing — these are starting values):
-```kotlin
-val BuildingType.constructionTime: Float get() = when (this) {
-    BuildingType.STONE_FURNACE -> 10f
-    BuildingType.BASIC_MINER   -> 15f
-}
-```
-
----
-
-**`construction/ConstructionQueue.kt`**
-
-A simple sequential queue wrapping `ArrayDeque<ConstructionEntry>`.
-- `enqueue(type: BuildingType)` — adds entry with full time
-- `peek(): ConstructionEntry?` — returns head without removing
-- `tick(delta: Float): ConstructionEntry?` — advances head's `remainingTime`; if <= 0, removes and returns the completed entry; otherwise returns null
-- `isEmpty(): Boolean`
-- Observable: accepts a `onChange: () -> Unit` callback called on any state change
-
----
-
-**`construction/ConstructionManager.kt`**
-
-Owns a `ConstructionQueue`. Holds references to `GlobalResourcePool`, `UnassignedPool`, and the Fleks `World`.
-
-**`requestBuild(type: BuildingType): Boolean`**
-- Look up cost for `type` (hardcoded Phase 1 costs: STONE_FURNACE = 5 stone, BASIC_MINER = 5 stone + 5 iron plates)
-- Check affordability via `GlobalResourcePool.has(resource, amount)` for each cost item
-- If affordable: deduct all costs immediately, enqueue the build, return true
-- If not affordable: return false (UI already prevents this, but defensive check)
-
-**`tick(delta: Float)`**
-- Call `constructionQueue.tick(delta)`
-- If a completed entry is returned: create the ECS entity in the Fleks world
-
-**Entity creation for completed builds:**
-
-```kotlin
-private fun createEntity(type: BuildingType) {
-    entityWorld.entity {
-        it += Building(type)
-        when (type) {
-            STONE_FURNACE -> {
-                it += Producer()
-                it += FuelConsumer(fuelType = COAL, consumeRate = 1f / 30f, fuelBuffer = 0f)
-                it += ResourceBuffer(capacity = mapOf(IRON_ORE to 6f, COAL to 6f))
-            }
-            BASIC_MINER -> {
-                it += Miner()
-                it += FuelConsumer(fuelType = COAL, consumeRate = 1f / 30f, fuelBuffer = 0f)
-                it += ResourceBuffer(capacity = mapOf(COAL to 6f))
-            }
-        }
+class ConstructionQueue {
+    val entries: MutableList<ConstructionEntry> = mutableListOf()
+    fun enqueue(type: BuildingType, duration: Float) { entries.add(ConstructionEntry(type, duration)) }
+    val active: ConstructionEntry? get() = entries.firstOrNull()
+    fun advance(delta: Float): ConstructionEntry? {
+        val entry = active ?: return null
+        entry.remainingTime -= delta
+        return if (entry.remainingTime <= 0f) { entries.removeFirst(); entry } else null
     }
-    unassignedPool.add(type, 1)
 }
 ```
 
-Entity configuration is data-driven per BuildingType — adding a new building type = new `when` branch with its components, not a new system.
+Instantiate `ConstructionQueue` in `GameScreen` as a class-level property. Add it to `injectables` so `FactoryModel` can expose queue state to the UI.
 
----
+**Construction times (Phase 1, tune during testing):**
+- Stone Furnace: 5 seconds
+- Basic Miner: 8 seconds
 
-**Wire into `GameScreen.kt`:**
+**Build button flow (wire into `FactoryModel` / `FactoryView`):**
+1. Check `GlobalResourcePool` has enough of each cost resource
+2. If not: button stays disabled (already handled visually in Step 6)
+3. If yes: deduct cost from pool immediately; call `constructionQueue.enqueue(type, duration)`
+4. Show construction entry in build menu left panel: building name + progress bar + remaining time countdown
 
-Add class-level:
+**`GameScreen.render()` — advance queue:**
 ```kotlin
-private val constructionManager = ConstructionManager(globalResourcePool, unassignedPool, entityWorld)
+constructionQueue.advance(delta)?.let { completed ->
+    createBuildingEntity(completed.type)
+}
 ```
 
-Wire `FactoryModel.requestBuild`:
-```kotlin
-factoryModel.onRequestBuild = { type -> constructionManager.requestBuild(type) }
-```
+**`createBuildingEntity(type: BuildingType)` in GameScreen:**
+- Creates the ECS entity with the correct components for the building type
+- Stone Furnace: `Building`, `Producer` (recipe = null initially), `FuelConsumer` (coal, consume rate from design doc), `ProductionSatisfaction` (declaredRates empty until recipe assigned)
+- Basic Miner: `Building`, `Miner` (resource = null initially), `FuelConsumer` (coal), `ProductionSatisfaction`
+- After creation: does NOT assign recipe — player assigns from the detail panel in FactoryView
+- `FactoryModel` detects new entities on next update (Fleks world provides entity query)
 
-In `render()`, tick the manager:
-```kotlin
-constructionManager.tick(delta)
-```
+**Recipe assignment (wire into the detail panel from Step 6):**
+When player assigns a recipe in the detail panel:
+1. Set `entity[Producer].recipe = selectedRecipe`
+2. Recompute `entity[ProductionSatisfaction].declaredRates`: for each input resource, `rate = inputs_per_cycle / recipe.duration`
+3. `PoolTickSystem` picks up new rates on the next tick automatically
 
-Wire the queue's `onChange` callback to notify `FactoryModel` so the build menu progress bar updates.
-
----
-
-**Acceptance criteria:**
-- Clicking Build deducts resources immediately if affordable
-- Progress bar in build menu shows remaining construction time ticking down
-- On completion, building appears in the building list
-- Building list row is clickable and assignment panel opens
-- Building produces correctly once recipe is assigned (verify via resource bar rates)
-- Queue correctly prevents starting a second build while one is in progress (Phase 1 sequential)
+**Compile check:** `./gradlew core:compileKotlin` when done.
 
 ---
 
----
+## Step 8 — Save / Load & Offline Progress
 
-## Step 8 — Save / Load
-
-**Paste this into a new chat:**
-
----
-
-I'm working on FactoryIdle, a LibGDX + Fleks ECS idle factory game. CLAUDE.md is loaded as project context — read it fully. Also read `docs/design-systems.md` (Save/Load section) in full.
+You are implementing the save/load system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
 **What already exists:**
-- All systems, UI, construction — the full Phase 1 game is playable (Steps 1–7 complete)
+- Full game loop: ECS, factory view, construction queue
+- `kotlinx.serialization` is already in `core/build.gradle`
+- Global state: `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry`, `ConstructionQueue`
+- ECS world with building entities
 
-**Your task:** Implement save and load so game state persists across sessions. Use kotlinx.serialization for JSON. Save on game exit and on a 60-second autosave timer. Load on startup and restore all state.
+**Read `docs/design-systems.md` (Save/Load section) before designing.**
 
----
-
-**`save/GameState.kt`**
-
-A fully serializable snapshot of everything needed to restore a session:
-
+**`data/SaveData.kt`** — the serializable save schema:
 ```kotlin
 @Serializable
-data class GameState(
-    val resourcePool: Map<String, Float>,              // Resource.name() -> amount
-    val lifetimeStats: Map<String, Float>,             // Resource.name() -> lifetime total
-    val unlockedResources: List<String>,               // Resource.name() list
-    val unlockedBuildings: List<String>,               // BuildingType.name() list
-    val unassignedPool: Map<String, Int>,              // BuildingType.name() -> count
-    val placedBuildings: List<PlacedBuildingState>,
-    val constructionQueue: List<ConstructionEntryState>,
-    val firedMilestoneIds: List<String>,
-    val version: Int = 1                               // for future migration
+data class SaveData(
+    val version: Int = 1,
+    val savedAt: Long = 0L,
+    val globalPool: Map<String, Float>,
+    val lifetimeStats: Map<String, Float>,
+    val unlockedBuildings: List<String>,
+    val unlockedResources: List<String>,
+    val placedBuildings: List<PlacedBuildingData>,
+    val constructionQueue: List<ConstructionEntryData>,
+    val completedMilestones: Set<String>
 )
 
 @Serializable
-data class PlacedBuildingState(
-    val type: String,                   // BuildingType.name()
-    val assignedRecipe: RecipeState?,   // null if unassigned
-    val assignedResource: String?,      // Resource.name(), null if unassigned
-    val progress: Float,
-    val fuelBuffer: Float,
-    val bufferContents: Map<String, Float>
-)
-
-@Serializable
-data class RecipeState(
-    val inputs: Map<String, Float>,
-    val outputs: Map<String, Float>,
-    val duration: Float
-)
-
-@Serializable
-data class ConstructionEntryState(
+data class PlacedBuildingData(
     val type: String,
-    val totalTime: Float,
+    val assignedRecipe: String?,       // recipe id or null
+    val assignedResource: String?,     // resource name or null (for miners)
+    val cycleProgress: Float,
+    val fractionalAccumulator: Float,
+    val paused: Boolean
+)
+
+@Serializable
+data class ConstructionEntryData(
+    val type: String,
     val remainingTime: Float
 )
 ```
 
+Use `String` keys for enum values (`.name`) rather than enum references — this makes future schema migrations simpler.
+
+**`data/SaveManager.kt`**
+
+- `save(gameScreen: GameScreen): Unit` — serializes all global state + ECS entity state to `SaveData`, writes JSON to `Gdx.files.local("save.json")`
+- `load(): SaveData?` — reads and deserializes from `save.json`; returns null if file missing or parse fails
+- `applyLoad(data: SaveData, gameScreen: GameScreen): Unit` — restores all state: pool, lifetime stats, unlocks, then reconstructs ECS entities from `placedBuildings`, restores construction queue. After entity reconstruction, `ProductionSatisfaction.declaredRates` are recomputed from each entity's recipe (derived — not saved). `currentSatisfaction` starts at 1.0 and is computed on first pool tick.
+
+**`GameScreen` integration:**
+- On `create()` / first run: attempt load; if save exists, call `applyLoad`; otherwise start fresh
+- Autosave: track `timeSinceLastSave += delta` in `render()`; when > 60f, call `SaveManager.save()` and reset counter; show "Saved" label that fades after 2 seconds
+- On `pause()` (fires on minimize/close on desktop): call `SaveManager.save()`
+
+**Offline progress:**
+- `savedAt` timestamp is `System.currentTimeMillis()` at save time
+- On load: `elapsedSeconds = (System.currentTimeMillis() - data.savedAt) / 1000.0`
+- Cap at 8 hours (28800 seconds) to prevent absurd catch-up
+- For each resource: `gained = pool.netRate[R] * elapsedSeconds` (net rate = inbound − outbound from last session; approximate from saved rates or skip if complex, simplify as needed)
+- Apply gained amounts to pool
+- Show a one-time modal after load listing resources gained: "While you were away (2h 14m): +1,840 Iron Ore, +920 Iron Plates..." — use a simple `Dialog` from Scene2D. Player dismisses it.
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
 ---
 
-**`save/SaveManager.kt`**
+## Step 9 — Research System & Science Packs
 
-Handles serialization and file I/O.
+You are implementing the research system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
+**What already exists:**
+- Full game loop including save/load (Steps 1–8)
+- `UnlockRegistry` — manages which `BuildingType` and `Resource` values are unlocked
+- Milestone system — fires reward lambdas; research unlocks use the same pattern
+- `RecipeRegistry` — data-driven; new recipes = new config entries
+
+**Read `docs/design-systems.md` (Research System, Science Packs, Research Tiers Overview) and `docs/design-ui.md` (Research View section) before designing.**
+
+**`data/ResearchGoal.kt`**
 ```kotlin
-object SaveManager {
-    private val json = Json { prettyPrint = false; ignoreUnknownKeys = true }
-    private val saveFile = Gdx.files.local("save/game.json")
+data class ResearchGoal(
+    val id: String,
+    val name: String,
+    val tier: Int,                         // 1=Red, 2=Orange, etc.
+    val cost: Map<Resource, Int>,          // science packs required
+    val reward: () -> Unit                 // mutates UnlockRegistry
+)
+```
 
-    fun save(state: GameState) { saveFile.writeString(json.encodeToString(state), false) }
-    fun load(): GameState? = if (saveFile.exists()) json.decodeFromString(saveFile.readString()) else null
+**`data/ResearchManager.kt`** (global state, outside ECS)
+```kotlin
+class ResearchManager(private val unlockRegistry: UnlockRegistry) {
+    var activeGoal: ResearchGoal? = null
+    var progress: Float = 0f
+    val completedIds: MutableSet<String> = mutableSetOf()
+    val allGoals: List<ResearchGoal> = buildAllResearch(unlockRegistry)
+
+    fun setActive(goal: ResearchGoal) { activeGoal = goal; progress = 0f }
+    fun addProgress(amount: Float) { ... }  // advance, fire reward on completion
+    fun isCompleted(id: String) = id in completedIds
+    fun isAvailable(goal: ResearchGoal): Boolean  // tier prereqs met
 }
 ```
 
+Add `ResearchManager` to `GameScreen` as a class-level injectable.
+
+**`data/ResearchDefinitions.kt`** — Tier 1 (Red Science) research goals. Implement only Tier 1 now; stub Tiers 2–6 as empty lists. Key Tier 1 goals from `docs/design-systems.md`:
+- Basic Mining (10 red) → unlocks Basic Miner
+- Basic Smelting (10 red) → unlocks Iron Plate recipe
+- Copper Smelting (15 red) → unlocks Copper Plate recipe
+- Basic Assembly (25 red) → unlocks Assembler Mk1
+- Iron Gear Casting (30 red) → unlocks Iron Gear recipe
+- Copper Wiring (30 red) → unlocks Copper Wire recipe
+- Red Science Prod (50 red) → unlocks Red Science Pack recipe, unlocks Research Facility
+
+**Research Facility ECS entity:**
+- Uses `Producer` component but its output goes to `ResearchManager`, not the pool
+- Override behavior in `ProductionSystem` or use a marker component `ResearchProducer` to distinguish: on cycle complete, call `researchManager.addProgress(1f)` instead of writing to pool
+- Auto-assigns required science packs from `researchManager.activeGoal?.cost` as its `declaredRates` — player does not set a recipe manually
+- If no active research: entity idles (`NO_RECIPE` state)
+
+**Science Pack recipes** — add to `RecipeRegistry`:
+- Red Science: Assembler recipe, inputs: 1 Iron Plate + 1 Copper Wire, output: 1 Red Science Pack, duration: 5s
+
+**Add to `Enums.kt`:**
+- `RED_SCIENCE(SCIENCE)`, `ORANGE_SCIENCE(SCIENCE)` etc. to `Resource`
+- `RESEARCH_FACILITY`, `ASSEMBLER_MK1` to `BuildingType`
+- `COPPER_ORE(RAW)`, `COPPER_PLATE(PROCESSED)`, `COPPER_WIRE(COMPONENT)`, `IRON_GEAR(COMPONENT)` to `Resource` if not already present
+
+**`ui/models/ResearchModel.kt`** and **`ui/views/ResearchView.kt`** (replace stub):
+- Active research section: goal name, progress bar, science pack consumption rate
+- Tiered list: Tier 1 visible; goals show as unlocked (clickable), locked (greyed), or completed (checked/greyed)
+- Click an available goal → `researchManager.setActive(goal)`
+- Lock indicator for unavailable goals: "Requires: [prerequisite name]"
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
 ---
 
-**`save/StateSerialization.kt`**
+## Step 10a — Phase 2: Building Groups (ECS & Data)
 
-Two top-level functions to convert between live game state and `GameState`:
+You are implementing the building group system (data/ECS layer) for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
-**`captureState(...): GameState`** — reads from all global state objects and iterates Fleks world entities to build the serializable snapshot.
+**Context:** Phase 1 uses one ECS entity per individual building. Phase 2 (unlocked by early Orange Science research) transitions to one ECS entity per BuildingGroup of N buildings. The player never interacts with individual buildings again after this point. Read `docs/design-buildings.md` fully and `docs/design-systems.md` (Pool Tick Algorithm, Fractional Accumulation sections) before designing.
 
-**`restoreState(state: GameState, ...)`** — writes all values back to global state objects and recreates ECS entities from `PlacedBuildingState` entries. Restores construction queue. Marks fired milestones as already-completed in `MilestoneSystem` (pass the fired ID set in so the system skips those conditions).
+**What already exists:**
+- Individual building entities with `Producer`/`Miner`/`FuelConsumer`/`ProductionSatisfaction`
+- `BuildingGroup` component exists but is Phase 2 aware only
+- `UnlockRegistry` manages unlocked building types
+- Research system (Step 9) — the unlock trigger for groups is a research reward
 
-`MilestoneSystem` should accept a `Set<String>` of already-fired milestone IDs at construction time and skip those conditions immediately.
+**Group unlock transition:**
+When the "Group Management I" research completes (Orange Science tier), fire a one-time transition:
+1. For each recipe/resource currently assigned among existing individual entities: collect all entities sharing that recipe, create ONE new group entity with `count = N` (where N = number of individual entities), assign that recipe/resource
+2. Individual entities whose recipe matches are deleted; the new group entity replaces them
+3. Entities with no recipe go to `UnassignedPool`
+4. Player sees the UI simplify from N individual cards to a few group cards
 
----
-
-**Wire into `FactoryIdle.kt`:**
-
+**`data/UnassignedPool.kt`**
 ```kotlin
-override fun create() {
-    GameSkin.initialize()
-    val screen = GameScreen(this)
-    // Attempt load
-    SaveManager.load()?.let { state ->
-        restoreState(state, screen.globalResourcePool, screen.lifetimeStats, ...)
+class UnassignedPool {
+    private val counts: MutableMap<BuildingType, Int> = mutableMapOf()
+    fun add(type: BuildingType, count: Int = 1) { counts[type] = (counts[type] ?: 0) + count }
+    fun remove(type: BuildingType, count: Int = 1): Boolean { ... }  // returns false if insufficient
+    fun get(type: BuildingType) = counts[type] ?: 0
+}
+```
+
+Add to `GameScreen` and `injectables`.
+
+**Updated `components/BuildingGroup.kt`:**
+```kotlin
+data class BuildingGroup(
+    val id: String,
+    val type: BuildingType,
+    var name: String,
+    var count: Int = 0,
+    var priority: GroupPriority = GroupPriority.NORMAL,
+    var paused: Boolean = false
+) : Component<BuildingGroup> { ... }
+```
+
+**`declaredRates` scaling for groups:**
+When count changes, immediately recompute `ProductionSatisfaction.declaredRates`:
+```kotlin
+rate[resource] = (singleBuildingInputsPerCycle[resource] / recipe.duration) * count
+```
+`PoolTickSystem` picks this up automatically on the next tick.
+
+**`fractionalAccumulator` in groups:**
+A group of N buildings produces N items per cycle at full satisfaction. The accumulator handles Mk multipliers normally. Output per cycle: `floor(baseOutput × N × mkMultiplier × currentSatisfaction)`. The accumulator still smooths partial satisfaction across cycles.
+
+**Group creation (for new buildings in Phase 2):**
+- New buildings from construction go to `UnassignedPool` (not directly into a group)
+- Player creates a group via the factory view UI (Step 10b); the group entity is created then
+- A group with `count = 0` is valid — it's a named placeholder ready for buildings
+
+**`PoolTickSystem` updates:**
+No structural change required. Groups already have `BuildingGroup` component for paused check. Their `declaredRates` are already N× the single-building rate. The satisfaction math is identical.
+
+**Save/load additions for groups** — update `SaveData.kt`:
+- `unassignedPool: Map<String, Int>` — serialized counts
+- Group entities serialize as `PlacedBuildingData` with `count` field added
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
+---
+
+## Step 10b — Phase 2: Group UI
+
+You are implementing the building group UI for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
+
+**What already exists:**
+- Phase 2 ECS layer from Step 10a: `BuildingGroup`, `UnassignedPool`, group transition logic
+- Factory view from Step 6 (individual building cards) — replace with group card grid in Phase 2
+- Full skin with `CARD_BG_*`, `ICON_BLD_*`, `ICON_RSC_*`, `STATUS_*` drawables, `BUTTON_NAVIGATION_SELECTED`, etc.
+
+**Read `docs/design-buildings.md` (all sections), `docs/design-ui.md` (Group Card Design, Group Detail View, Factory View sections), and `docs/design-assets.md` before designing.**
+
+**`FactoryView.kt` — Phase 2 mode:**
+After the group unlock transition, the right panel switches from an individual building list to a group card grid. The left panel build menu remains but now also shows unassigned pool counts and a "New Group" button per building type.
+
+**Group card widget** — a fixed-size `Table` or `Stack` (approximately 160×180px, tune during implementation):
+- Background: `CARD_BG_RUNNING/STALLED/FUEL_STARVED/PAUSED/IDLE` nine-patch, fills card
+- Building type art image: `BLD_ART_*` drawable, 64×64, centered
+- Recipe/resource icon overlay: `ICON_RSC_*` drawable, 36×36, centered over art
+- Group name label: `Labels.BODY()`, left-aligned, below art
+- Status dot: `STATUS_*` drawable, 12×12, bottom-left
+- Building count label: `Labels.BODY_BOLD()`, bottom-right, e.g. "70"
+- Satisfaction bar: thin bar below name, width = `currentSatisfaction × cardWidth`. Colors: green at 100%, amber 60–99%, orange 1–59%, hidden at 0% or STALLED
+
+All card elements update every render tick from `FactoryModel`.
+
+**Group detail view** — opens when a card is clicked (slide in from right or replace right panel):
+
+Header:
+- Group name field: tap to make editable inline; confirm on Enter or focus-lost
+- Building type label
+- State indicator: colored dot + state name + satisfaction percentage
+
+Stats:
+- Building count, recipe/resource assigned
+- Effective production rate: `count × baseRate × mkMultiplier × currentSatisfaction /min`
+- Per-input satisfaction breakdown (same as Phase 1 detail panel)
+
+Controls:
+- `+ Add` / `− Remove` count adjusters (from `UnassignedPool`; disable if pool empty)
+- `Quick Fill` — move all unassigned of this type into group
+- `Change Recipe` — opens recipe picker; shows confirmation warning "Current progress resets"
+- `Pause` / `Unpause` toggle
+- `Split` — count input, then assign recipe to split group or return to pool
+- `Merge` — available if another group of same building type is selected
+- `Disband` — confirmation dialog; returns all buildings to `UnassignedPool`
+
+Priority stepper:
+```
+[◀]  Normal  [▶]
+```
+Cycles through `LOWEST → LOW → NORMAL → HIGH → HIGHEST`. Never shows numbers.
+
+**"New Group" flow:**
+1. Player clicks "New Group" for a building type in the build menu
+2. Recipe picker opens — shows all unlocked recipes for this building type
+3. Count input appears (capped at `UnassignedPool.get(type)`)
+4. Confirm → creates new group entity with `BuildingGroup`, assigns recipe, sets `declaredRates`, moves buildings from pool to group
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
+---
+
+## Step 11 — Bottleneck Inspector & Net Rate Display
+
+You are implementing factory health diagnostics for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
+
+**What already exists:**
+- Full game loop with groups, research, save/load
+- Resource bar shows amounts; Step 5 added rolling rate window to `ResourceBarModel`
+- `PoolTickSystem` tracks per-entity `currentSatisfaction` and per-resource inbound/outbound rates
+
+**Read `docs/design-ui.md` and `docs/design-systems.md` (Status Indicators section) before designing.**
+
+**`util/NumberFormatter.kt`** — single utility used everywhere in the codebase:
+```kotlin
+enum class NumberStyle { FULL, COMPACT, SCIENTIFIC }
+
+fun formatNumber(n: Float, style: NumberStyle): String {
+    return when (style) {
+        FULL -> "%,.0f".format(n)              // "1,250,000"
+        COMPACT -> compactFormat(n)            // "1.25M", "42.3K"
+        SCIENTIFIC -> scientificFormat(n)      // "1.25e6"
     }
-    addScreen(screen)
-    setScreen<GameScreen>()
-}
-
-override fun dispose() {
-    val state = captureState(...)
-    SaveManager.save(state)
-    super.dispose()
 }
 ```
 
-Note: `GameScreen`'s global state properties will need to be `internal` or exposed via a getter so `FactoryIdle` can pass them to `restoreState`.
+Audit every number render point in the codebase and route through this function. Store the player's style preference in settings (persisted in save state or separately in `Gdx.files.local("settings.json")`). Add a style selector to `SettingsView`.
 
-**Autosave in `GameScreen.render()`:**
+**Net rate display — update `ResourceBarModel`:**
+- Expose `getNetRate(resource): Float` = `inboundRate[R] - outboundRate[R]` from pool tick data
+- `PoolTickSystem` must track and expose these per-resource rates (add `inboundRates` and `outboundRates` maps)
+- Resource bar right panel already shows amounts; add net rate display: `+12.4/s` (green) or `−3.1/s` (red) next to each resource. Use `formatNumber` for amounts.
+
+**Bottleneck Inspector panel:**
+Add as a dedicated sub-view within `FactoryView` (e.g. a collapsible panel at the bottom, or an icon button in the nav bar for a full view — your choice). Re-evaluates every 3 seconds.
+
+Four checks:
+1. **Zero-output groups:** any group with `currentSatisfaction == 0f` and state = `STALLED`
+2. **Negative net rate:** any resource where `netRate < 0` (pool draining)
+3. **Fuel-starved groups:** any group with state = `FUEL_STARVED`
+4. **Zero-stock resources:** any resource where pool amount ≤ 0 that has active demand
+
+Results rendered as a scrollable flagged list. Each entry: warning icon + description + a link/button that scrolls the group card grid to the offending group and briefly highlights it. If no issues: show "Factory healthy" in green.
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
+---
+
+## Step 12 — Nudge System & Tutorial
+
+You are implementing the in-game nudge and tutorial system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
+
+**What already exists:**
+- Full game loop, all views, milestone system (fires rewards invisibly)
+- `MilestoneSystem` fires milestones — tutorial callouts attach to specific milestone events
+
+**Read `docs/design-ui.md` (brief) and `docs/design-systems.md` (Milestone System section). The full tutorial specification is written below — this spec takes precedence over anything else.**
+
+**Core philosophy:** The tutorial is not a separate mode. It is the first 3 minutes of the game. The milestone system is invisible — players never see thresholds or progress bars. Callouts are non-blocking, brief, observational, and disappear the moment the player acts. Never prescribe quantities, never block UI, never use the word "tutorial."
+
+**`ui/NudgeSystem.kt`** — evaluates a priority-ordered condition list each update tick, surfaces the first true condition as a one-line hint in a small persistent panel (bottom of screen or corner). One nudge at a time. Dismissible. Re-evaluates on dismiss. Conditions (in priority order):
+1. Any group has no recipe assigned
+2. Any resource has been at zero for more than 30 seconds
+3. A new science tier is unlockable at current pack production rate
+4. A Mk upgrade is affordable given current stock
+
+Nudge display: small `Label` in a `panel_bg` table, with an `×` dismiss button. Re-evaluates every 5 seconds or on player action.
+
+**`ui/TutorialController.kt`** — fires callouts keyed to game events. A callout is a non-blocking `Table` positioned near a UI element with a brief text string. Disappears after 10 seconds or when the player takes the relevant action.
+
+**Tutorial sequence** (milestone thresholds are invisible to the player — these are implementation targets only):
+
+| Event | Callout | Target element |
+|---|---|---|
+| Game opens | "Click to start mining. Resources accumulate automatically." | Iron ore card in resource bar |
+| 10 iron ore mined | Stone card appears — no callout, just appear | Mining widget |
+| 10 stone mined | Badge appears on Production nav button | Nav button |
+| Production panel opened (first time) | "Something new in production." | Production nav badge |
+| Unassigned building exists (first time) | "This facility needs a recipe to know what to produce." | Building card |
+| Recipe assigned, building has no fuel | — (permanent orange fuel indicator handles this) | — |
+| Orange fuel indicator hovered (first time) | Permanent tooltip: "No fuel. This facility requires: Coal" | Indicator |
+| 10 coal mined | Badge on Production nav button | Nav button |
+| 10 iron plates produced | Badge on Production nav button | Nav button |
+| 5 iron gear wheels produced | Copper chain unlocks — no callout, world just expands | — |
+
+**Callout rules:**
+- Each callout fires at most once per play session per key
+- Callout dismissed by: player performs the relevant action, 10s timeout, or explicit × click
+- Do not show a callout for an event the player has already handled before the callout fires
+
+**Stuck-player escalation** — fires only if player is past the expected time without acting:
+
+| Stuck state | L1 (visual pulse) | L2 (one-line) | L3 (dismissible tooltip) |
+|---|---|---|---|
+| Stone unlocked, not mined after 90s | 90s | +90s | +90s — "Stone ore is now available in the mining panel" |
+| Production panel not opened after furnace available for 90s | 90s | +90s | +90s — "Visit the production panel to build your first furnace" |
+| Furnace built, no recipe after 60s | 60s | +60s | +60s — "This furnace has no recipe assigned — click to assign one" |
+| Miner unlocked, not built after 120s | 120s | +120s | +120s — "A new facility is available to build" |
+| Assembler unlocked, not built after 120s | 120s | +120s | +120s — "A new facility is available to build" |
+
+L1 = visual pulse animation on the relevant UI element. L2 = one-line status text on the relevant card. L3 = dismissible tooltip. Each level cancels immediately when the player acts.
+
+**Skip intro:**
+- Small unobtrusive "Skip intro" text link in bottom corner from game start until tutorial is flagged complete
+- No confirmation required
+- On skip: dismiss all active callouts, grant 20 iron ore + 10 stone + 15 coal + 5 iron plates to pool, unlock Stone Furnace and Basic Miner in `UnlockRegistry`, activate nudge system
+
+**Tutorial state persisted in save:** which callouts have fired, whether tutorial is complete.
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
+---
+
+## Step 13 — Statistics Panel & UI Polish
+
+You are implementing statistics tracking and UI polish for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
+
+**What already exists:**
+- Full game loop, all views, nudge system
+- `LifetimeMiningStats` tracks lifetime mined amounts — extend the concept to all production
+
+**Read `docs/design-ui.md` before designing.**
+
+**`data/StatisticsTracker.kt`** (global state, outside ECS):
 ```kotlin
-private var autosaveTimer = 0f
-// In render:
-autosaveTimer += delta
-if (autosaveTimer >= 60f) {
-    SaveManager.save(captureState(...))
-    autosaveTimer = 0f
+class StatisticsTracker {
+    val lifetimeProduced: MutableMap<Resource, Float> = mutableMapOf()
+    val totalFacilitiesBuilt: MutableMap<BuildingType, Int> = mutableMapOf()
+    var sciencePacksConsumed: Float = 0f
+    val sessionStartTime: Long = System.currentTimeMillis()
 }
 ```
 
+Wire into `ProductionSystem` and `MinerSystem` — increment `lifetimeProduced` on every cycle completion. Wire into construction system — increment `totalFacilitiesBuilt` on entity creation. Wire into research system — increment `sciencePacksConsumed`.
+
+**Statistics tab** — update `ProgressView.kt` to show two tabs: Milestones and Statistics.
+
+Statistics tab content:
+- Session time: `"Playing for: 1h 24m"`
+- Per-resource lifetime produced: scrollable table of resource icon + name + lifetime amount (formatted)
+- Facilities built: per building type count
+- Science packs consumed
+- All numbers through `formatNumber(n, COMPACT)`
+
+Per-group lifetime output — add a line to the group detail panel (Step 10b): `"Lifetime output: 48,291 Iron Plates"`. Track per-group in `StatisticsTracker` keyed by group id.
+
+**Empty state pass** — audit every panel. Add one-line centered messages for each:
+- Factory view with no buildings: "No buildings yet. Build your first one →"
+- Research view with no active research: "No active research. Select a goal above."
+- Progress view milestones (all completed): "All milestones complete."
+- Bottleneck Inspector (no issues): "Factory healthy."
+- Group card grid (no groups in Phase 2): "No groups yet. Create one from the build menu."
+
+**Number transition smoothing** — resource amounts and rates should tick up/down smoothly rather than jumping. Implement a simple lerp on display values: `displayValue = lerp(displayValue, targetValue, delta × 8f)`. Apply to all number labels in the resource bar.
+
+**UI consistency audit** — scan all views for:
+- Any label not using the established font styles (`Labels.HEADING()`, `Labels.BODY()`, `Labels.SMALL()`, `Labels.DIM()`)
+- Any button not using `Buttons.DEFAULT()`, `Buttons.ACCENT()`, or `Buttons.DANGER()`
+- Inconsistent padding (standardize to 8px between components, 4px for tight groups)
+- Fix any found without changing layout structure
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
+
 ---
 
-**Acceptance criteria:**
-- Play session (mine resources, build a furnace, assign recipe, watch production) → close game → reopen → all state restored exactly
-- Mid-construction building resumes with correct remaining time
-- Milestone state preserved (coal does not re-unlock if already unlocked)
-- Autosave triggers at 60s intervals (verify via log)
-- Save file is valid JSON and human-readable enough to debug
+## Step 14 — Audio
+
+You are implementing the audio system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
+
+**What already exists:** Full game loop, all views. No audio currently.
+
+**Read `docs/design-ui.md` (Settings View section) before designing.**
+
+**Audio files needed** (source these before starting — LibGDX supports OGG/MP3/WAV):
+- Ambience loops (seamlessly loopable OGG files): `sfx/ambience_light.ogg`, `sfx/ambience_medium.ogg`, `sfx/ambience_heavy.ogg`
+- UI sounds (short OGG): `sfx/ui_recipe_assign.ogg`, `sfx/ui_research_complete.ogg`, `sfx/ui_resource_depleted.ogg`, `sfx/ui_save_confirm.ogg`
+
+Place all in `assets/sfx/`.
+
+**`audio/AudioManager.kt`**:
+- Loads all audio files on init (dispose in GameScreen)
+- Exposes `masterVolume: Float` (0.0–1.0), `muted: Boolean`
+- `updateAmbience(totalActiveFacilities: Int)` — mix three ambience layers:
+  - Light hum: always plays at low volume when any facilities exist
+  - Medium industrial: volume scales from 0 at <20 facilities to full at 100+
+  - Heavy factory roar: volume scales from 0 at <100 to full at 500+
+  - All clamped: `effectiveVolume = if (muted) 0f else layer.targetVolume × masterVolume`
+- `playUI(sound: UISoundType)` — plays the corresponding short SFX at `masterVolume`, skips if muted
+
+**Wire UI sounds to existing event hooks:**
+- Recipe assigned: in the recipe picker confirmation handler
+- Research complete: in `ResearchManager.addProgress()` when goal completes
+- Resource depleted: in `PoolTickSystem` when any resource crosses from > 0 to exactly 0
+- Autosave confirm: in the autosave trigger in `GameScreen.render()`
+
+**Settings view audio controls** — update `SettingsView.kt`:
+- Master volume slider (0–100), label showing current value
+- Mute toggle checkbox
+- Both stored in settings and applied to `AudioManager` immediately
+
+**Save/load audio settings:** Store `masterVolume` and `muted` in a separate `settings.json` (not the main save state), loaded on startup before any audio plays.
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
 
 ---
+
+## Step 15 — Import / Export Save
+
+You are implementing the save import/export feature for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
+
+**Prerequisite:** Step 8 (save system) must be stable with a version field in the schema before starting this step.
+
+**What already exists:**
+- `SaveManager.kt` with `save()` and `load()` operating on `save.json`
+- `SaveData.kt` with `version: Int` field
+- `SettingsView.kt` — add export/import UI here
+
+**Read `docs/design-systems.md` (Save/Load section) before designing.**
+
+**`data/SaveManager.kt` additions:**
+```kotlin
+fun exportToBase64(): String {
+    val json = Json.encodeToString(buildSaveData())
+    return Base64.getEncoder().encodeToString(json.toByteArray())
+}
+
+fun importFromBase64(encoded: String): Boolean {
+    return try {
+        val json = String(Base64.getDecoder().decode(encoded))
+        val data = Json.decodeFromString<SaveData>(json)
+        if (data.version != CURRENT_VERSION) return false  // version mismatch — reject
+        pendingImport = data  // store; apply after user confirms
+        true
+    } catch (e: Exception) { false }
+}
+```
+
+**Export UI** (in `SettingsView`):
+- "Export Save" `TextButton` using `Buttons.DEFAULT()` style
+- On click: call `exportToBase64()`, copy result to clipboard (`Gdx.app.clipboard.contents = encoded`), show brief "Copied to clipboard!" confirmation label that fades after 3 seconds
+
+**Import UI** (in `SettingsView`):
+- `TextField` for pasting a base64 string (labeled "Paste save code")
+- "Import" `TextButton` using `Buttons.ACCENT()` style
+- On click: call `importFromBase64(textField.text)`
+  - If false (invalid/version mismatch): show error label "Invalid save code."
+  - If true: show confirmation dialog "This will replace your current save. Continue?" with Confirm/Cancel buttons using `Buttons.DANGER()` and `Buttons.DEFAULT()` styles
+  - On confirm: call `applyLoad(pendingImport)`, restart/reload the game state
+
+**Version mismatch handling:** If imported save has a different `version` than `CURRENT_VERSION`, reject with "Save code is from an incompatible version." Do not attempt migration in this step — that is future work.
+
+**Compile check:** `./gradlew core:compileKotlin` when done.
