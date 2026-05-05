@@ -3,12 +3,14 @@ package com.github.jacks.factoryIdle
 import com.badlogic.gdx.scenes.scene2d.Event
 import com.badlogic.gdx.scenes.scene2d.EventListener
 import com.github.jacks.factoryIdle.screens.GameScreen
+import com.github.jacks.factoryIdle.ui.GameSkin
 import ktx.app.KtxGame
 import ktx.app.KtxScreen
 
 class FactoryIdle : KtxGame<KtxScreen>(), EventListener {
 
     override fun create() {
+        GameSkin.initialize()
         addScreen(GameScreen(this))
         setScreen<GameScreen>()
     }
