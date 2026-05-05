@@ -29,7 +29,7 @@ Idle factory game inspired by Factorio. No spatial world, no belts, no pipes. Al
 
 ## Core Architecture Rules
 - `GlobalResourcePool: Map<Resource, Float>` is the single source of truth. All buildings read from and write to it.
-- **No per-building inventory.** Local `ResourceBuffer` is anti-jitter only (3 cycles of inputs). `BufferFillSystem` fills it from the global pool each tick. `ProductionSystem` reads from the buffer only — never directly from the pool.
+- **No per-building inventory.** Each entity declares continuous consumption rates (`declaredRates`) to the pool. The pool tick computes `currentSatisfaction` (0.0–1.0) per entity based on available supply and priority tier. Output = fractional accumulation of `baseOutput × mkMultiplier × currentSatisfaction`. Cycle timers never change — only output scales.
 - **Buildings are never items in the resource pool.** Construction deducts resources and creates an ECS entity directly.
 - **Phase 1:** one ECS entity = one individual building. **Phase 2+:** one ECS entity = one BuildingGroup.
 
@@ -61,10 +61,10 @@ data class Producer(...) : Component<Producer> {
 ---
 
 ## ECS System Execution Order (do not reorder)
-1. `BufferFillSystem` — sorts groups by GroupPriority (HIGHEST first); fills buffers from global pool; skips paused groups
-2. `ProductionSystem` — advances producers; reads buffer, writes pool on cycle complete; skips paused or count=0; multiplies all rates by group count
+1. `PoolTickSystem` — iterates all active entities; computes `currentSatisfaction` per entity per resource using priority-tier allocation; proportional within tier; writes satisfaction back to each entity; skips paused entities
+2. `ProductionSystem` — advances cycle timers; on cycle complete: `fractionalAccumulator += baseOutput × mkMultiplier × currentSatisfaction`; awards whole items to pool; skips paused or no-recipe entities
 3. `MinerSystem` — same pattern as ProductionSystem; deposits directly to global pool
-4. `FuelSystem` — drains fuel buffer over time; tops up from global pool; sets FUEL_STARVED if empty; skips paused
+4. `FuelSystem` — computes fuel satisfaction per entity using the same priority model; marks FUEL_STARVED if fuel satisfaction = 0; skips paused
 5. `MilestoneSystem` — checks pending conditions each tick; fires reward callbacks; removes completed milestones
 
 ---
@@ -77,7 +77,7 @@ data class Producer(...) : Component<Producer> {
 - `injectables { add(dependency) }` registers by type name
 - Inject inside a system: `private val pool = world.inject<GlobalResourcePool>()`
 - Component access: `entity[Producer]` (throws if absent), `entity.getOrNull(Producer)` (nullable), `entity has Producer` (boolean)
-- Family defined in system constructor: `IteratingSystem(family { all(Producer, ResourceBuffer) })`
+- Family defined in system constructor: `IteratingSystem(family { all(Producer) })`
 - `World.Companion.family { }` is available during `configureWorld` — import `com.github.quillraven.fleks.World.Companion.family`
 
 ---
@@ -99,8 +99,8 @@ Always present a plan and wait for explicit approval before making any code chan
 
 ## Rules for Claude Sessions
 - **No spatial elements** (no grid, no belts, no pipes) — intentional design
-- **No per-building inventory** — global pool only; local buffer is anti-jitter only
-- **Do not reorder ECS systems** — execution order is load-bearing
+- **No per-building inventory** — satisfaction rate model only; `declaredRates` + `currentSatisfaction` per entity; no local buffer
+- **Do not reorder ECS systems** — execution order is load-bearing; PoolTickSystem must run before ProductionSystem
 - **Milestones check lifetime stats, not current pool**
 - **Fuel is separate from recipe inputs** — FuelConsumer stays composable
 - **Recipe is a data class, not an ECS component**

@@ -63,21 +63,21 @@ From this point, all building simulation is at the group level.
 
 ## Group States
 
-Five mutually exclusive states. Systems set all states except PAUSED, which only the player sets.
+Five mutually exclusive states. Systems set all states automatically except PAUSED, which only the player sets.
 
 | State | Color | Hex | Meaning |
 |---|---|---|---|
-| RUNNING | Green | `#27ae60` | Producing normally |
-| STALLED | Yellow | `#f39c12` | Fuel available; recipe inputs missing from pool |
-| FUEL_STARVED | Orange | `#e67e22` | Recipe inputs available; fuel/power missing |
+| RUNNING | Green | `#27ae60` | Producing — satisfaction > 0 for all inputs (may be partial rate) |
+| STALLED | Yellow | `#f39c12` | At least one recipe input has satisfaction = 0; no output |
+| FUEL_STARVED | Orange | `#e67e22` | Fuel satisfaction = 0; no output regardless of recipe inputs |
 | PAUSED | Red | `#c0392b` | Player-set hard stop |
 | NO_RECIPE | Grey | `#7a8090` | No recipe assigned; inert, not an error |
 
 **Key rules:**
+- RUNNING includes partial satisfaction — a group producing at 60% is RUNNING. The satisfaction indicator on the card communicates the partial rate; the state communicates that production is occurring
 - STALLED and FUEL_STARVED are distinct — they give the player different diagnostic information
-- A PAUSED group cannot become STALLED or FUEL_STARVED; systems skip it entirely
-- Buffer is frozen while paused; progress resumes mid-cycle on unpause (no reset)
-- A PAUSED group's buffer does not get refilled — BufferFillSystem skips it
+- A PAUSED group cannot become STALLED or FUEL_STARVED; systems skip it entirely and its declared rates are zero so it does not compete for resources
+- `fractionalAccumulator` is preserved on pause; production resumes mid-cycle on unpause
 
 State colors appear in two places on each group card: a small dot (bottom-left) and a thin border around the entire card. Both carry the same color. The border enables quick scanning across many cards; the dot confirms on closer inspection.
 
@@ -89,15 +89,18 @@ State colors appear in two places on each group card: a small dot (bottom-left) 
 enum class GroupPriority { LOWEST, LOW, NORMAL, HIGH, HIGHEST }
 ```
 
-`BufferFillSystem` sorts all groups by priority (HIGHEST first) before distributing resources from the global pool. High-priority groups fill their buffers first; lower-priority groups get what remains.
+Priority controls how resources are allocated when supply cannot meet total demand. The pool tick evaluates tiers in strict order (HIGHEST first). Whatever supply remains after a tier is fully satisfied flows to the next tier. If a tier cannot be fully satisfied, lower tiers receive nothing.
+
+Within a tier, supply is distributed proportionally to each group's declared consumption rate — a group consuming 60/s and one consuming 40/s both run at the same satisfaction percentage. Neither is arbitrarily favoured.
 
 **Rules:**
 - Priority is always displayed by name, never as a number
 - Default for new groups: NORMAL
-- Priority affects resource distribution only — it does not affect fuel distribution (fuel is first-come first-served per FuelSystem)
+- Priority affects recipe input allocation only — fuel allocation follows the same priority model independently via `FuelSystem`
 - Priority is a soft, ongoing preference. For a hard stop, use pause.
+- Setting a group to HIGH when supply is tight has real visible consequences: lower-tier groups may receive zero supply until the High tier is fully met
 
-**Use case:** Coal is scarce. Player sets circuit board group to HIGH, gear group to LOWEST. Circuit boards keep running; gears slow or stall until supply recovers — without the player having to manually intervene each tick.
+**Use case:** Iron plates are scarce. Player sets circuit board group to HIGH, gear group to LOWEST. Circuits run at full satisfaction; gears run at whatever is left — without the player having to manually intervene each tick. If supply is so tight that HIGH groups alone drain it all, LOWEST groups stall entirely.
 
 **UI control:** A stepper widget on the group detail view: `[◀]  Normal  [▶]` cycling through the five named levels. Never show numbers.
 
@@ -121,7 +124,7 @@ Multiple groups of the same building type and recipe are fully supported and int
 - **Group A:** 1000 assemblers — Iron Gears — NORMAL priority — never paused → baseline production
 - **Group B:** 500 assemblers — Iron Gears — LOW priority — toggled on/off → burst capacity
 
-When iron plates run low, Group B self-throttles first (LOW priority loses buffer fill competition) without manual intervention. The player only pauses Group B when they want a definitive hard stop.
+When iron plates run short, the pool tick satisfies NORMAL tier first. Group B (LOW) receives only what remains and its satisfaction ratio drops first — it self-throttles automatically without manual intervention. The player only pauses Group B when they want a definitive hard stop, not just a soft throttle.
 
 This pattern is a core late-game tool. **Never auto-merge groups** — same recipe groups exist together intentionally.
 
@@ -192,15 +195,17 @@ Auto-merge never happens silently. The player is always in control of group boun
 
 ---
 
-## Buffer Flush Rules
+## Recipe Change Rules
+
+There is no local buffer to flush. When a recipe changes, the satisfaction model transitions cleanly:
 
 | Trigger | Behaviour |
 |---|---|
-| Group disbanded | Full buffer returned to global pool |
-| Recipe changed | Full buffer returned to global pool; progress resets |
-| Count reduced | Proportional buffer returned to global pool |
+| Recipe changed | Old declared rates deregistered immediately; `fractionalAccumulator` resets to 0; new rates registered; production of new recipe begins on next tick |
+| Group disbanded | Declared rates drop to zero; entity removed from pool tick; `fractionalAccumulator` discarded |
+| Count reduced | Declared rates recomputed for new count immediately; `fractionalAccumulator` scales proportionally |
 
-Partial inputs are always returned as raw resources — they are never partially crafted on flush.
+Because resources are allocated continuously (not batched into a buffer), there are no partially-consumed inputs to return on recipe change. The pool simply stops debiting the old inputs and begins debiting the new ones. Any in-progress accumulation is discarded on recipe change — the cycle restarts cleanly.
 
 ---
 
