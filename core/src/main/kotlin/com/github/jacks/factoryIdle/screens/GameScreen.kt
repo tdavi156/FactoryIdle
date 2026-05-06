@@ -17,6 +17,7 @@ import com.github.jacks.factoryIdle.systems.MinerSystem
 import com.github.jacks.factoryIdle.systems.PoolTickSystem
 import com.github.jacks.factoryIdle.systems.ProductionSystem
 import com.github.jacks.factoryIdle.ui.models.NavigationModel
+import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
 import com.github.jacks.factoryIdle.ui.views.FactoryView
 import com.github.jacks.factoryIdle.ui.views.NavSidebarView
 import com.github.jacks.factoryIdle.ui.views.PowerView
@@ -57,7 +58,8 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     }
 
     private val navigationModel  = NavigationModel()
-    private val resourceBarView  = ResourceBarView()
+    private val resourceBarModel = ResourceBarModel(globalResourcePool, lifetimeMiningStats, unlockRegistry)
+    private val resourceBarView  = ResourceBarView(resourceBarModel)
     private val factoryView      = FactoryView()
     private val powerView        = PowerView()
     private val researchView     = ResearchView()
@@ -101,6 +103,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
 
     override fun render(delta: Float) {
         entityWorld.update(delta)
+        resourceBarModel.update(delta)
         stage.act(delta)
         stage.draw()
     }

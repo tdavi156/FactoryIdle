@@ -1,14 +1,16 @@
 package com.github.jacks.factoryIdle.data
 
-enum class ResourceCategory { RAW, PROCESSED, COMPONENT, SCIENCE }
+enum class ResourceCategory(val displayName: String) {
+    RAW("Raw"), PROCESSED("Processed"), COMPONENT("Component"), SCIENCE("Science")
+}
 
-enum class Resource(val category: ResourceCategory) {
-    IRON_ORE(ResourceCategory.RAW),
-    COAL(ResourceCategory.RAW),
-    STONE(ResourceCategory.RAW),
-    COPPER_ORE(ResourceCategory.RAW),
-    IRON_PLATE(ResourceCategory.PROCESSED),
-    COPPER_PLATE(ResourceCategory.PROCESSED)
+enum class Resource(val category: ResourceCategory, val displayName: String) {
+    IRON_ORE    (ResourceCategory.RAW,       "Iron Ore"),
+    COAL        (ResourceCategory.RAW,       "Coal"),
+    STONE       (ResourceCategory.RAW,       "Stone"),
+    COPPER_ORE  (ResourceCategory.RAW,       "Copper Ore"),
+    IRON_PLATE  (ResourceCategory.PROCESSED, "Iron Plate"),
+    COPPER_PLATE(ResourceCategory.PROCESSED, "Copper Plate")
 }
 
 enum class BuildingType { STONE_FURNACE, BASIC_MINER }

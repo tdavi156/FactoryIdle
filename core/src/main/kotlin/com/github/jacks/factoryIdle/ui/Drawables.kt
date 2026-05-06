@@ -1,5 +1,7 @@
 package com.github.jacks.factoryIdle.ui
 
+import com.github.jacks.factoryIdle.data.Resource
+
 enum class Drawables {
     // Buttons
     BUTTON_DEFAULT_UP, BUTTON_DEFAULT_OVER, BUTTON_DEFAULT_DOWN, BUTTON_DEFAULT_DISABLED,
@@ -22,10 +24,21 @@ enum class Drawables {
     ICON_RSC_IRON_ORE_SM, ICON_RSC_IRON_ORE_MD,
     ICON_RSC_COAL_SM, ICON_RSC_COAL_MD,
     ICON_RSC_STONE_SM, ICON_RSC_STONE_MD,
+    ICON_RSC_COPPER_ORE_SM, ICON_RSC_COPPER_ORE_MD,
     ICON_RSC_IRON_PLATE_SM, ICON_RSC_IRON_PLATE_MD,
+    ICON_RSC_COPPER_PLATE_SM, ICON_RSC_COPPER_PLATE_MD,
     // Building icons and art
     ICON_BLD_STONE_FURNACE, ICON_BLD_BASIC_MINER,
     BLD_ART_STONE_FURNACE, BLD_ART_BASIC_MINER;
 
     operator fun invoke() = name.lowercase()
+}
+
+fun Resource.smIconKey(): String = when (this) {
+    Resource.IRON_ORE     -> Drawables.ICON_RSC_IRON_ORE_SM()
+    Resource.COAL         -> Drawables.ICON_RSC_COAL_SM()
+    Resource.STONE        -> Drawables.ICON_RSC_STONE_SM()
+    Resource.COPPER_ORE   -> Drawables.ICON_RSC_COPPER_ORE_SM()
+    Resource.IRON_PLATE   -> Drawables.ICON_RSC_IRON_PLATE_SM()
+    Resource.COPPER_PLATE -> Drawables.ICON_RSC_COPPER_PLATE_SM()
 }
