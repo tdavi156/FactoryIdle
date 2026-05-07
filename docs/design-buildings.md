@@ -10,7 +10,7 @@ In Phase 1 the player has few enough buildings (typically 5–15 total) that ind
 
 The player interacts with individual buildings directly:
 - Click a building in the building list to open its detail panel
-- Assign a recipe (for furnaces) or a resource (for miners)
+- Assign a recipe (miners select from raw resource recipes via the same recipe picker)
 - See its current state (running, stalled, fuel-starved)
 
 This is intentionally simple. The group system unlocks in early Phase 2 when assemblers arrive and the player would otherwise manage 20+ identical buildings one by one.
@@ -25,7 +25,7 @@ Players never interact with individual buildings directly once groups unlock. A 
 One ECS entity = one BuildingGroup. All production rates, buffer sizes, and fuel consumption scale linearly with `group.count`.
 
 ```kotlin
-data class BuildingGroup(
+data class BuildingGroupComponent(
     val id: String,
     val type: BuildingType,
     var name: String,                          // player-renameable, e.g. "Iron Gears #1"
@@ -52,7 +52,7 @@ A group with `count = 0` is valid — it acts as a named placeholder with a reci
 ## Group Unlock Transition
 
 When the groups research completes (early Phase 2):
-- All existing individual buildings are **automatically grouped by their current recipe/resource** — one group created per active recipe, named automatically (e.g. "Iron Plates #1")
+- All existing individual buildings are **automatically grouped by their current recipe** — one group created per active recipe, named automatically (e.g. "Iron Plates #1")
 - Buildings with no assignment go to the unassigned pool
 - No manual action required from the player
 - The player immediately feels the UI simplify — 20 individual furnace rows collapse into 2 group cards
@@ -146,7 +146,7 @@ Auto-merge never happens silently. The player is always in control of group boun
 
 ### Create Group
 1. Click "New Group" in the Factory view for a given building type
-2. Choose recipe (or resource for miners) from picker
+2. Choose recipe from picker (miners select from raw resource recipes restricted by `RecipeRegistry`)
 3. Set count via +/− stepper or slider (capped at current unassigned pool size; 0 is valid)
 4. Confirm → group created, buildings moved from unassigned pool to group
 

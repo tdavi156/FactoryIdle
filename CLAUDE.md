@@ -52,20 +52,21 @@ Enums live in `data/Enums.kt`. `Recipe` is a plain data class in `data/RecipeReg
 Each ECS component is **its own file** in the `components/` package. Never group multiple components in one file. Every component implements `Component<T>` with a companion object as its `ComponentType<T>`:
 
 ```kotlin
-data class Producer(...) : Component<Producer> {
-    override fun type() = Producer
-    companion object : ComponentType<Producer>()
+data class ProducerComponent(...) : Component<ProducerComponent> {
+    override fun type() = ProducerComponent
+    companion object : ComponentType<ProducerComponent>()
 }
 ```
+
+**Naming convention:** All ECS component classes must have `Component` appended to the class name (e.g. `BuildingComponent`, `ProducerComponent`, `FuelConsumerComponent`). This makes component types immediately distinguishable from plain data classes, enums, and other game objects.
 
 ---
 
 ## ECS System Execution Order (do not reorder)
 1. `PoolTickSystem` — iterates all active entities; computes `currentSatisfaction` per entity per resource using priority-tier allocation; proportional within tier; writes satisfaction back to each entity; skips paused entities
-2. `ProductionSystem` — advances cycle timers; on cycle complete: `fractionalAccumulator += baseOutput × mkMultiplier × currentSatisfaction`; awards whole items to pool; skips paused or no-recipe entities
-3. `MinerSystem` — same pattern as ProductionSystem; deposits directly to global pool
-4. `FuelSystem` — computes fuel satisfaction per entity using the same priority model; marks FUEL_STARVED if fuel satisfaction = 0; skips paused
-5. `MilestoneSystem` — checks pending conditions each tick; fires reward callbacks; removes completed milestones
+2. `ProductionSystem` — advances cycle timers; on cycle complete: `fractionalAccumulator += baseOutput × mkMultiplier × currentSatisfaction`; awards whole items to pool and lifetime stats; skips paused or no-recipe entities. Handles **all** building types including miners (which have no-input recipes outputting raw resources)
+3. `FuelSystem` — computes fuel satisfaction per entity using the same priority model; marks FUEL_STARVED if fuel satisfaction = 0; skips paused
+4. `MilestoneSystem` — checks pending conditions each tick; fires reward callbacks; removes completed milestones
 
 ---
 
@@ -76,8 +77,8 @@ data class Producer(...) : Component<Producer> {
 - Systems added as instances: `systems { add(SomeSystem()) }`
 - `injectables { add(dependency) }` registers by type name
 - Inject inside a system: `private val pool = world.inject<GlobalResourcePool>()`
-- Component access: `entity[Producer]` (throws if absent), `entity.getOrNull(Producer)` (nullable), `entity has Producer` (boolean)
-- Family defined in system constructor: `IteratingSystem(family { all(Producer) })`
+- Component access: `entity[ProducerComponent]` (throws if absent), `entity.getOrNull(ProducerComponent)` (nullable), `entity has ProducerComponent` (boolean)
+- Family defined in system constructor: `IteratingSystem(family { all(ProducerComponent) })`
 - `World.Companion.family { }` is available during `configureWorld` — import `com.github.quillraven.fleks.World.Companion.family`
 
 ---
@@ -102,13 +103,13 @@ Always present a plan and wait for explicit approval before making any code chan
 - **No per-building inventory** — satisfaction rate model only; `declaredRates` + `currentSatisfaction` per entity; no local buffer
 - **Do not reorder ECS systems** — execution order is load-bearing; PoolTickSystem must run before ProductionSystem
 - **Milestones check lifetime stats, not current pool**
-- **Fuel is separate from recipe inputs** — FuelConsumer stays composable
+- **Fuel is separate from recipe inputs** — `FuelConsumerComponent` stays composable
 - **Recipe is a data class, not an ECS component**
 - **RecipeRegistry is data-driven** — new buildings = new config entries, not new code paths
 - **Buildings never enter the resource pool**
 - **Never auto-merge groups** — always an explicit player action
 - **GroupPriority shown by name only** — never as a number
-- **Phase 1 = individual building entities** — BuildingGroup is a Phase 2 research unlock
+- **Phase 1 = individual building entities** — `BuildingGroupComponent` is a Phase 2 research unlock
 - **ResearchManager is outside ECS** — research progress is never a Resource value
 - **Stay in Phase 1 scope** unless explicitly told otherwise
 

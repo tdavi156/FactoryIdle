@@ -255,7 +255,7 @@ Fully deterministic — players can plan ratios around guaranteed average rates.
 
 Coal has two distinct roles. Systems must never conflate them.
 
-**Coal as fuel (invisible):** Consumed by the building as power. Not listed as a recipe ingredient. Handled exclusively by `FuelConsumer` component and `FuelSystem`. Applies to: Stone Furnace, Basic Miner, Boiler.
+**Coal as fuel (invisible):** Consumed by the building as power. Not listed as a recipe ingredient. Handled exclusively by `FuelConsumerComponent` and `FuelSystem`. Applies to: Stone Furnace, Basic Miner, Boiler.
 
 **Coal as recipe ingredient (visible):** Coal is a chemical input to the recipe. Shows in the recipe picker, tracked in `declaredRates` as a recipe input. Applies to: Steel Plate recipe, Plastic recipe.
 
@@ -265,9 +265,9 @@ A Stone Furnace smelting Steel Plate consumes coal in **both** roles simultaneou
 
 ## Fuel System
 
-Fuel (coal in Phase 1, electricity in later phases) is a composable concern separate from recipe inputs. The `FuelConsumer` component is shared across all fuel-burning buildings.
+Fuel (coal in Phase 1, electricity in later phases) is a composable concern separate from recipe inputs. The `FuelConsumerComponent` is shared across all fuel-burning buildings.
 
-- Each building with a `FuelConsumer` declares its fuel consumption rate to the pool separately from its recipe input rates
+- Each building with a `FuelConsumerComponent` declares its fuel consumption rate to the pool separately from its recipe input rates
 - `FuelSystem` runs each tick, computes fuel satisfaction using the same rate-based model as recipe inputs
 - If fuel satisfaction = 0 the building is marked `FUEL_STARVED` and produces nothing that tick
 - A building can be `FUEL_STARVED` even when recipe inputs are fully satisfied — these are distinct failure states
@@ -284,7 +284,7 @@ RUNNING      → satisfaction > 0 for fuel and all recipe inputs; production occ
 STALLED      → at least one non-fuel recipe input has satisfaction = 0; no output
 FUEL_STARVED → fuel satisfaction = 0; no output regardless of recipe input state
 PAUSED       → player-set hard stop; systems skip entity entirely; declaredRates = 0
-NO_RECIPE    → no recipe or resource assigned; inert, not an error state
+NO_RECIPE    → no recipe assigned; inert, not an error state
 ```
 
 **Key rules:**
@@ -410,15 +410,15 @@ Phase 1 uses individual building entities. Groups are a Phase 2 research unlock.
 
 ### Stone Furnace
 - **Cost:** 5 stone
-- **Fuel:** Coal via `FuelConsumer` — invisible, not a recipe input
+- **Fuel:** Coal via `FuelConsumerComponent` — invisible, not a recipe input
 - **Recipes:** Iron Ore → Iron Plate (4s cycle, 15/min); Stone → Stone Brick; Iron Ore + Coal → Steel Plate (coal IS a recipe input for this recipe)
 - **Construction:** timed, sequential queue
 
 ### Basic Miner
 - **Cost:** 5 stone + 5 iron plates
-- **Assignment:** one RAW resource type (uses Miner component, not Producer)
+- **Component:** `ProducerComponent` — same as all other buildings. Recipe picker is restricted to RAW resource recipes by `RecipeRegistry` (no inputs, 1 resource output, 4s cycle). The resource to mine is chosen by assigning one of these recipes.
 - **Rate:** 1 resource per 4s → 15/min
-- **Fuel:** Coal via `FuelConsumer`
+- **Fuel:** Coal via `FuelConsumerComponent`
 - **Construction:** timed, sequential queue
 
 ### Phase 1 Production Ratios (reference)
@@ -445,7 +445,7 @@ Buildings are **never items in the resource pool.** They are not crafted into in
 2. If cost is not met: button is greyed out, no action
 3. If cost is met: resources deducted immediately from `GlobalResourcePool`, timed construction begins
 4. While constructing: building appears in a queue with a progress indicator
-5. On completion: ECS entity is created, ready for recipe/resource assignment
+5. On completion: ECS entity is created, ready for recipe assignment
 
 **Phase 1:** sequential queue (one at a time).
 **Phase 2+ research unlocks:** parallel construction slots (2 slots, then 4 slots).
@@ -463,8 +463,8 @@ GlobalResourcePool          Map<Resource, Float>
 LifetimeMiningStats         Map<Resource, Float>
 UnlockRegistry              Set<BuildingType>, Set<Resource>
 UnassignedPool              Map<BuildingType, Int>
-PlacedBuildings (Phase 1)   List of: type, assignedRecipe/Resource, cycleProgress, fractionalAccumulator
-BuildingGroups (Phase 2+)   List of: id, name, type, count, priority, paused, recipe/resource, cycleProgress, fractionalAccumulator
+PlacedBuildings (Phase 1)   List of: type, assignedRecipe, cycleProgress, fractionalAccumulator
+BuildingGroups (Phase 2+)   List of: id, name, type, count, priority, paused, recipe, cycleProgress, fractionalAccumulator
 ActiveResearch              goal id + progress float
 CompletedMilestones         Set<String> (milestone ids already fired)
 ConstructionQueue           List of: type, remainingTime
