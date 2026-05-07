@@ -9,6 +9,7 @@ import com.github.jacks.factoryIdle.FactoryIdle
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.LifetimeMiningStats
 import com.github.jacks.factoryIdle.data.RecipeRegistry
+import com.github.jacks.factoryIdle.data.UnassignedPool
 import com.github.jacks.factoryIdle.data.UnlockRegistry
 import com.github.jacks.factoryIdle.data.buildPhase1Milestones
 import com.github.jacks.factoryIdle.systems.FuelSystem
@@ -16,6 +17,7 @@ import com.github.jacks.factoryIdle.systems.MilestoneSystem
 import com.github.jacks.factoryIdle.systems.MinerSystem
 import com.github.jacks.factoryIdle.systems.PoolTickSystem
 import com.github.jacks.factoryIdle.systems.ProductionSystem
+import com.github.jacks.factoryIdle.ui.models.FactoryModel
 import com.github.jacks.factoryIdle.ui.models.NavigationModel
 import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
 import com.github.jacks.factoryIdle.ui.views.FactoryView
@@ -39,6 +41,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     private val globalResourcePool  = GlobalResourcePool()
     private val lifetimeMiningStats = LifetimeMiningStats()
     private val unlockRegistry      = UnlockRegistry()
+    private val unassignedPool      = UnassignedPool()
     private val recipeRegistry      = RecipeRegistry()
 
     private val entityWorld: World = configureWorld {
@@ -59,8 +62,9 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
 
     private val navigationModel  = NavigationModel()
     private val resourceBarModel = ResourceBarModel(globalResourcePool, lifetimeMiningStats, unlockRegistry)
+    private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry)
     private val resourceBarView  = ResourceBarView(resourceBarModel)
-    private val factoryView      = FactoryView()
+    private val factoryView      = FactoryView(factoryModel)
     private val powerView        = PowerView()
     private val researchView     = ResearchView()
     private val progressView     = ProgressView()
@@ -104,6 +108,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     override fun render(delta: Float) {
         entityWorld.update(delta)
         resourceBarModel.update(delta)
+        factoryModel.update(delta)
         stage.act(delta)
         stage.draw()
     }

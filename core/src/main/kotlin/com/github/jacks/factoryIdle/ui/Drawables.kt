@@ -1,5 +1,6 @@
 package com.github.jacks.factoryIdle.ui
 
+import com.github.jacks.factoryIdle.data.BuildingType
 import com.github.jacks.factoryIdle.data.Resource
 
 enum class Drawables {
@@ -41,4 +42,18 @@ fun Resource.smIconKey(): String = when (this) {
     Resource.COPPER_ORE   -> Drawables.ICON_RSC_COPPER_ORE_SM()
     Resource.IRON_PLATE   -> Drawables.ICON_RSC_IRON_PLATE_SM()
     Resource.COPPER_PLATE -> Drawables.ICON_RSC_COPPER_PLATE_SM()
+}
+
+fun Resource.mdIconKey(): String = when (this) {
+    Resource.IRON_ORE     -> Drawables.ICON_RSC_IRON_ORE_MD()
+    Resource.COAL         -> Drawables.ICON_RSC_COAL_MD()
+    Resource.STONE        -> Drawables.ICON_RSC_STONE_MD()
+    Resource.COPPER_ORE   -> Drawables.ICON_RSC_COPPER_ORE_MD()
+    Resource.IRON_PLATE   -> Drawables.ICON_RSC_IRON_PLATE_MD()
+    Resource.COPPER_PLATE -> Drawables.ICON_RSC_COPPER_PLATE_MD()
+}
+
+fun BuildingType.iconKey(): String = when (this) {
+    BuildingType.STONE_FURNACE -> Drawables.ICON_BLD_STONE_FURNACE()
+    BuildingType.BASIC_MINER   -> Drawables.ICON_BLD_BASIC_MINER()
 }

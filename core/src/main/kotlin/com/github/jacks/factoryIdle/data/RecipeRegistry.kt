@@ -19,5 +19,13 @@ class RecipeRegistry {
         BuildingType.BASIC_MINER to emptyList()
     )
 
+    private val constructionCosts: Map<BuildingType, Map<Resource, Int>> = mapOf(
+        BuildingType.STONE_FURNACE to mapOf(Resource.STONE to 5),
+        BuildingType.BASIC_MINER   to mapOf(Resource.STONE to 5, Resource.IRON_PLATE to 5)
+    )
+
     fun recipesFor(type: BuildingType): List<Recipe> = recipes.getOrDefault(type, emptyList())
+
+    fun constructionCostFor(type: BuildingType): Map<Resource, Int> =
+        constructionCosts.getOrDefault(type, emptyMap())
 }

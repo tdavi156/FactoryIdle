@@ -13,7 +13,10 @@ enum class Resource(val category: ResourceCategory, val displayName: String) {
     COPPER_PLATE(ResourceCategory.PROCESSED, "Copper Plate")
 }
 
-enum class BuildingType { STONE_FURNACE, BASIC_MINER }
+enum class BuildingType(val displayName: String) {
+    STONE_FURNACE("Stone Furnace"),
+    BASIC_MINER("Basic Miner")
+}
 
 enum class GroupState { RUNNING, STALLED, FUEL_STARVED, PAUSED, NO_RECIPE }
 
