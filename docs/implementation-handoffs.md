@@ -2,7 +2,7 @@
 
 Each section is a self-contained prompt for a new Claude chat. The implementing chat has no memory of prior sessions — every prompt includes full context. Steps must be completed in order unless marked as independent.
 
-Steps 1, 3 are complete. Step 2 needs a full redo. Steps 4–15 are new.
+Steps 1–6 are complete. Steps 7–15 are pending.
 
 ---
 
@@ -17,9 +17,8 @@ You are implementing the core production simulation for an idle factory game cal
 - `data/GlobalState.kt` — `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry`
 - `data/RecipeRegistry.kt` — `Recipe` data class, `RecipeRegistry`
 - `data/MilestoneDefinitions.kt` — Phase 1 milestone chain
-- `components/Producer.kt`, `Miner.kt`, `FuelConsumer.kt`, `Building.kt`, `BuildingGroup.kt`
+- `components/ProducerComponent.kt`, `FuelConsumerComponent.kt`, `BuildingComponent.kt`, `BuildingGroupComponent.kt`, `ProductionSatisfactionComponent.kt`
 - `systems/MilestoneSystem.kt` — leave this untouched
-- `systems/MinerSystem.kt` — update for fractional accumulator (see below)
 - `ui/` — skin layer, fully complete, do not touch
 - `screens/GameScreen.kt` — has the ECS world and system registrations; update system list
 
@@ -35,15 +34,15 @@ Each building entity declares its consumption rate per resource to the pool (`de
 
 **Specifically build:**
 
-`components/ProductionSatisfaction.kt` — new component:
+`components/ProductionSatisfactionComponent.kt` — new component:
 ```kotlin
-data class ProductionSatisfaction(
+data class ProductionSatisfactionComponent(
     val declaredRates: MutableMap<Resource, Float> = mutableMapOf(),
     var currentSatisfaction: Float = 1f,
     var fractionalAccumulator: Float = 0f
-) : Component<ProductionSatisfaction> {
-    override fun type() = ProductionSatisfaction
-    companion object : ComponentType<ProductionSatisfaction>()
+) : Component<ProductionSatisfactionComponent> {
+    override fun type() = ProductionSatisfactionComponent
+    companion object : ComponentType<ProductionSatisfactionComponent>()
 }
 ```
 
@@ -55,22 +54,18 @@ data class ProductionSatisfaction(
 5. Skip paused entities (check `BuildingGroup.paused` in Phase 2)
 
 `systems/ProductionSystem.kt` — rewrite:
-- Family: `all(Producer, ProductionSatisfaction)`
-- Skip if paused (Phase 2 BuildingGroup check) or `recipe == null` (set `NO_RECIPE`)
+- Family: `all(ProducerComponent, ProductionSatisfactionComponent)`
+- Skip if paused (`BuildingGroupComponent.paused` check) or `recipe == null` (set `NO_RECIPE`)
 - Advance `producer.progress += deltaTime`
 - On cycle complete (`progress >= recipe.duration`): compute `fractionalAccumulator += recipe.baseOutput × currentSatisfaction`; award `floor(fractionalAccumulator)` items to pool; subtract awarded amount from accumulator; reset `producer.progress = 0f`; set `RUNNING` if satisfaction > 0, `STALLED` if satisfaction = 0
 - Do NOT reset progress if inputs are missing — the cycle timer always runs
+- Handles ALL building types including miners (which have no-input recipes outputting raw resources)
 
 `systems/FuelSystem.kt` — rewrite:
-- Each `FuelConsumer` entity declares its fuel consumption rate in `ProductionSatisfaction.declaredRates` for the fuel resource (Coal in Phase 1)
+- Each `FuelConsumerComponent` entity declares its fuel consumption rate in `ProductionSatisfactionComponent.declaredRates` for the fuel resource (Coal in Phase 1)
 - FuelSystem runs after PoolTickSystem. It reads `currentSatisfaction` for the fuel resource specifically
-- If fuel satisfaction = 0: set `FUEL_STARVED` on any `Producer` or `Miner` on this entity
+- If fuel satisfaction = 0: set `FUEL_STARVED` on any `ProducerComponent` on this entity
 - FuelSystem skips paused entities
-
-`systems/MinerSystem.kt` — update:
-- Add `ProductionSatisfaction` to family
-- Miners have no recipe input (they produce raw resources), so their `currentSatisfaction` = fuel satisfaction only
-- Apply fractional accumulation: `fractionalAccumulator += baseOutput × currentSatisfaction`; award whole items to pool
 
 **Fix in `data/Enums.kt`:**
 - Rename `ResourceCategory.INTERMEDIATE` to `ResourceCategory.COMPONENT`
@@ -79,8 +74,8 @@ data class ProductionSatisfaction(
 **Update `screens/GameScreen.kt`:**
 - Remove `BufferFillSystem()` from systems block
 - Add `PoolTickSystem()` as the first system
-- Every entity that was getting a `ResourceBuffer` component should now get a `ProductionSatisfaction` component instead
-- Recompute `declaredRates` in `ProductionSatisfaction` from the entity's recipe: `rate[resource] = inputs_per_cycle[resource] / recipe.duration`
+- Every entity that was getting a `ResourceBuffer` component should now get a `ProductionSatisfactionComponent` component instead
+- Recompute `declaredRates` in `ProductionSatisfactionComponent` from the entity's recipe: `rate[resource] = inputs_per_cycle[resource] / recipe.duration`
 
 **Compile check:** Run `./gradlew core:compileKotlin` when done. Fix all errors before finishing.
 
@@ -197,7 +192,7 @@ You are implementing the factory view UI for an idle factory game called Factory
 **What already exists:**
 - Navigation shell (Step 4), Resource Bar (Step 5) — do not touch
 - `FactoryView.kt` — stub table with "Factory" label; replace this
-- ECS world with `Producer`, `Miner`, `FuelConsumer`, `ProductionSatisfaction` components on building entities
+- ECS world with `ProducerComponent`, `FuelConsumerComponent`, `ProductionSatisfactionComponent` components on building entities. All building types (including miners) use `ProducerComponent` — miners have no-input recipes restricted to raw resources by `RecipeRegistry`
 - `GroupState` enum: `RUNNING`, `STALLED`, `FUEL_STARVED`, `PAUSED`, `NO_RECIPE`
 - `Drawables` enum: `STATUS_RUNNING`, `STATUS_STALLED`, `STATUS_FUEL_STARVED`, `STATUS_PAUSED`, `STATUS_IDLE`, `CARD_BG_*`, `ICON_BLD_*`, `ICON_RSC_*` — all registered in skin
 - Skin: `Buttons.DEFAULT()`, `Buttons.ACCENT()`, `Buttons.DANGER()`, `Labels.BODY()`, `Labels.BODY_BOLD()`, `Labels.SMALL()`, `Labels.HEADING()`
@@ -240,11 +235,11 @@ Two-panel horizontal split:
 
 **Inline Detail Panel** (shown when a building card is clicked):
 - Building name label + back button to return to list
-- Recipe/resource picker: shows available recipes for this building type from `RecipeRegistry`; player taps one to assign; updates the entity's `Producer.recipe` and triggers `declaredRates` recomputation in `ProductionSatisfaction`
+- Recipe picker: shows available recipes for this building type from `RecipeRegistry`; player taps one to assign; updates the entity's `ProducerComponent.recipe` and triggers `declaredRates` recomputation in `ProductionSatisfactionComponent`
 - Current state label: e.g. "RUNNING at 87%" or "STALLED — waiting for Iron Ore"
 - Per-input satisfaction breakdown: one row per input: icon + name + "12.4/s available, 24.0/s needed (50%)"
 - Fuel state (if `FuelConsumer`): "Fuel: Coal — OK" or "FUEL STARVED"
-- Pause toggle button: `Buttons.DEFAULT()` style. Pausing sets `BuildingGroup.paused = true` and zeroes `declaredRates`
+- Pause toggle button: `Buttons.DEFAULT()` style. Pausing sets `BuildingGroupComponent.paused = true` and zeroes `declaredRates`
 
 **Compile check:** `./gradlew core:compileKotlin` when done.
 
@@ -256,7 +251,7 @@ You are implementing the construction system for an idle factory game called Fac
 
 **What already exists:**
 - Factory view from Step 6 — build buttons exist but show placeholder messages; wire them in this step
-- Full ECS world with `PoolTickSystem`, `ProductionSystem`, `MinerSystem`, `FuelSystem`, `MilestoneSystem`
+- Full ECS world with `PoolTickSystem`, `ProductionSystem`, `FuelSystem`, `MilestoneSystem`
 - `GlobalResourcePool`, `UnlockRegistry`, `RecipeRegistry` available in GameScreen
 - `data/Enums.kt` — `BuildingType` enum
 
@@ -303,15 +298,15 @@ constructionQueue.advance(delta)?.let { completed ->
 
 **`createBuildingEntity(type: BuildingType)` in GameScreen:**
 - Creates the ECS entity with the correct components for the building type
-- Stone Furnace: `Building`, `Producer` (recipe = null initially), `FuelConsumer` (coal, consume rate from design doc), `ProductionSatisfaction` (declaredRates empty until recipe assigned)
-- Basic Miner: `Building`, `Miner` (resource = null initially), `FuelConsumer` (coal), `ProductionSatisfaction`
+- Stone Furnace: `BuildingComponent`, `ProducerComponent` (recipe = null initially), `FuelConsumerComponent` (coal, consume rate from design doc), `ProductionSatisfactionComponent` (declaredRates empty until recipe assigned)
+- Basic Miner: `BuildingComponent`, `ProducerComponent` (recipe = null initially — player assigns a raw resource recipe from `RecipeRegistry`), `FuelConsumerComponent` (coal), `ProductionSatisfactionComponent`
 - After creation: does NOT assign recipe — player assigns from the detail panel in FactoryView
 - `FactoryModel` detects new entities on next update (Fleks world provides entity query)
 
 **Recipe assignment (wire into the detail panel from Step 6):**
 When player assigns a recipe in the detail panel:
-1. Set `entity[Producer].recipe = selectedRecipe`
-2. Recompute `entity[ProductionSatisfaction].declaredRates`: for each input resource, `rate = inputs_per_cycle / recipe.duration`
+1. Set `entity[ProducerComponent].recipe = selectedRecipe`
+2. Recompute `entity[ProductionSatisfactionComponent].declaredRates`: for each input resource, `rate = inputs_per_cycle / recipe.duration`
 3. `PoolTickSystem` picks up new rates on the next tick automatically
 
 **Compile check:** `./gradlew core:compileKotlin` when done.
@@ -348,8 +343,7 @@ data class SaveData(
 @Serializable
 data class PlacedBuildingData(
     val type: String,
-    val assignedRecipe: String?,       // recipe id or null
-    val assignedResource: String?,     // resource name or null (for miners)
+    val assignedRecipe: String?,       // recipe id or null (miners use a raw resource recipe, same field)
     val cycleProgress: Float,
     val fractionalAccumulator: Float,
     val paused: Boolean
@@ -368,7 +362,7 @@ Use `String` keys for enum values (`.name`) rather than enum references — this
 
 - `save(gameScreen: GameScreen): Unit` — serializes all global state + ECS entity state to `SaveData`, writes JSON to `Gdx.files.local("save.json")`
 - `load(): SaveData?` — reads and deserializes from `save.json`; returns null if file missing or parse fails
-- `applyLoad(data: SaveData, gameScreen: GameScreen): Unit` — restores all state: pool, lifetime stats, unlocks, then reconstructs ECS entities from `placedBuildings`, restores construction queue. After entity reconstruction, `ProductionSatisfaction.declaredRates` are recomputed from each entity's recipe (derived — not saved). `currentSatisfaction` starts at 1.0 and is computed on first pool tick.
+- `applyLoad(data: SaveData, gameScreen: GameScreen): Unit` — restores all state: pool, lifetime stats, unlocks, then reconstructs ECS entities from `placedBuildings`, restores construction queue. After entity reconstruction, `ProductionSatisfactionComponent.declaredRates` are recomputed from each entity's recipe (derived — not saved). `currentSatisfaction` starts at 1.0 and is computed on first pool tick.
 
 **`GameScreen` integration:**
 - On `create()` / first run: attempt load; if save exists, call `applyLoad`; otherwise start fresh
@@ -437,8 +431,8 @@ Add `ResearchManager` to `GameScreen` as a class-level injectable.
 - Red Science Prod (50 red) → unlocks Red Science Pack recipe, unlocks Research Facility
 
 **Research Facility ECS entity:**
-- Uses `Producer` component but its output goes to `ResearchManager`, not the pool
-- Override behavior in `ProductionSystem` or use a marker component `ResearchProducer` to distinguish: on cycle complete, call `researchManager.addProgress(1f)` instead of writing to pool
+- Uses `ProducerComponent` but its output goes to `ResearchManager`, not the pool
+- Override behavior in `ProductionSystem` or use a marker component `ResearchProducerComponent` to distinguish: on cycle complete, call `researchManager.addProgress(1f)` instead of writing to pool
 - Auto-assigns required science packs from `researchManager.activeGoal?.cost` as its `declaredRates` — player does not set a recipe manually
 - If no active research: entity idles (`NO_RECIPE` state)
 
@@ -467,14 +461,14 @@ You are implementing the building group system (data/ECS layer) for an idle fact
 **Context:** Phase 1 uses one ECS entity per individual building. Phase 2 (unlocked by early Orange Science research) transitions to one ECS entity per BuildingGroup of N buildings. The player never interacts with individual buildings again after this point. Read `docs/design-buildings.md` fully and `docs/design-systems.md` (Pool Tick Algorithm, Fractional Accumulation sections) before designing.
 
 **What already exists:**
-- Individual building entities with `Producer`/`Miner`/`FuelConsumer`/`ProductionSatisfaction`
-- `BuildingGroup` component exists but is Phase 2 aware only
+- Individual building entities with `ProducerComponent`/`FuelConsumerComponent`/`ProductionSatisfactionComponent`. All building types (including miners) use `ProducerComponent`.
+- `BuildingGroupComponent` exists but is Phase 2 aware only
 - `UnlockRegistry` manages unlocked building types
 - Research system (Step 9) — the unlock trigger for groups is a research reward
 
 **Group unlock transition:**
 When the "Group Management I" research completes (Orange Science tier), fire a one-time transition:
-1. For each recipe/resource currently assigned among existing individual entities: collect all entities sharing that recipe, create ONE new group entity with `count = N` (where N = number of individual entities), assign that recipe/resource
+1. For each recipe currently assigned among existing individual entities: collect all entities sharing that recipe, create ONE new group entity with `count = N` (where N = number of individual entities), assign that recipe
 2. Individual entities whose recipe matches are deleted; the new group entity replaces them
 3. Entities with no recipe go to `UnassignedPool`
 4. Player sees the UI simplify from N individual cards to a few group cards
@@ -491,20 +485,20 @@ class UnassignedPool {
 
 Add to `GameScreen` and `injectables`.
 
-**Updated `components/BuildingGroup.kt`:**
+**Updated `components/BuildingGroupComponent.kt`:**
 ```kotlin
-data class BuildingGroup(
+data class BuildingGroupComponent(
     val id: String,
     val type: BuildingType,
     var name: String,
     var count: Int = 0,
     var priority: GroupPriority = GroupPriority.NORMAL,
     var paused: Boolean = false
-) : Component<BuildingGroup> { ... }
+) : Component<BuildingGroupComponent> { ... }
 ```
 
 **`declaredRates` scaling for groups:**
-When count changes, immediately recompute `ProductionSatisfaction.declaredRates`:
+When count changes, immediately recompute `ProductionSatisfactionComponent.declaredRates`:
 ```kotlin
 rate[resource] = (singleBuildingInputsPerCycle[resource] / recipe.duration) * count
 ```
@@ -722,7 +716,7 @@ class StatisticsTracker {
 }
 ```
 
-Wire into `ProductionSystem` and `MinerSystem` — increment `lifetimeProduced` on every cycle completion. Wire into construction system — increment `totalFacilitiesBuilt` on entity creation. Wire into research system — increment `sciencePacksConsumed`.
+Wire into `ProductionSystem` — increment `lifetimeProduced` on every cycle completion (handles all building types including miners). Wire into construction system — increment `totalFacilitiesBuilt` on entity creation. Wire into research system — increment `sciencePacksConsumed`.
 
 **Statistics tab** — update `ProgressView.kt` to show two tabs: Milestones and Statistics.
 
