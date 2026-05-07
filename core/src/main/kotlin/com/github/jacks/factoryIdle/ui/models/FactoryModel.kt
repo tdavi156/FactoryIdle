@@ -6,6 +6,7 @@ import com.github.jacks.factoryIdle.components.FuelConsumerComponent
 import com.github.jacks.factoryIdle.components.ProducerComponent
 import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.BuildingType
+import com.github.jacks.factoryIdle.data.ConstructionQueue
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.GroupState
 import com.github.jacks.factoryIdle.data.Recipe
@@ -35,20 +36,29 @@ data class PlacedBuildingData(
     val paused: Boolean
 )
 
+data class QueueDisplayEntry(
+    val type: BuildingType,
+    val progress: Float,
+    val remainingTime: Float
+)
+
 class FactoryModel(
     private val world: World,
     private val pool: GlobalResourcePool,
     private val unlockRegistry: UnlockRegistry,
     private val unassignedPool: UnassignedPool,
-    private val recipeRegistry: RecipeRegistry
+    private val recipeRegistry: RecipeRegistry,
+    private val constructionQueue: ConstructionQueue
 ) {
     private val buildingFamily = world.family { all(BuildingComponent) }
 
     private var _buildMenuEntries: List<BuildMenuEntry> = emptyList()
     private var _placedBuildings: List<PlacedBuildingData> = emptyList()
+    private var _queueEntries: List<QueueDisplayEntry> = emptyList()
 
     val buildMenuEntries: List<BuildMenuEntry> get() = _buildMenuEntries
     val placedBuildings: List<PlacedBuildingData> get() = _placedBuildings
+    val queueEntries: List<QueueDisplayEntry> get() = _queueEntries
 
     var selectedEntity: Entity? = null
         private set
@@ -58,12 +68,14 @@ class FactoryModel(
     fun onChanged(listener: () -> Unit) { changeListeners.add(listener) }
 
     fun update(delta: Float) {
-        val newMenu     = buildBuildMenu()
+        val newMenu      = buildBuildMenu()
         val newBuildings = buildPlacedBuildings()
+        val newQueue     = buildQueueEntries()
 
-        if (newMenu != _buildMenuEntries || newBuildings != _placedBuildings) {
+        if (newMenu != _buildMenuEntries || newBuildings != _placedBuildings || newQueue != _queueEntries) {
             _buildMenuEntries = newMenu
             _placedBuildings  = newBuildings
+            _queueEntries     = newQueue
             changeListeners.forEach { it() }
         }
     }
@@ -73,17 +85,30 @@ class FactoryModel(
         changeListeners.forEach { it() }
     }
 
+    fun buildBuilding(entry: BuildMenuEntry) {
+        if (!entry.canAfford) return
+        for ((resource, qty) in entry.cost) {
+            pool.subtract(resource, qty.toFloat())
+        }
+        constructionQueue.enqueue(entry.type, recipeRegistry.constructionTimeFor(entry.type))
+        changeListeners.forEach { it() }
+    }
+
     fun assignRecipe(entity: Entity, recipe: Recipe) {
         with(world) {
             if (!(entity has ProducerComponent)) return
             val producer = entity[ProducerComponent]
-            producer.recipe     = recipe
-            producer.progress   = 0f
-            producer.groupState = GroupState.NO_RECIPE
+            producer.recipe   = recipe
+            producer.progress = 0f
 
             val sat = entity.getOrNull(ProductionSatisfactionComponent) ?: return
             sat.declaredRates.clear()
             sat.fractionalAccumulator = 0f
+
+            // Re-seed fuel rate so it is not lost on recipe change
+            entity.getOrNull(FuelConsumerComponent)?.let { fuel ->
+                sat.declaredRates[fuel.fuelType] = fuel.consumeRate
+            }
             for ((resource, amount) in recipe.inputs) {
                 sat.declaredRates[resource] = amount / recipe.duration
             }
@@ -110,9 +135,9 @@ class FactoryModel(
         unlockRegistry.unlockedBuildingTypes().map { type ->
             val cost = recipeRegistry.constructionCostFor(type)
             BuildMenuEntry(
-                type          = type,
-                cost          = cost,
-                canAfford     = cost.all { (res, qty) -> pool.has(res, qty.toFloat()) },
+                type            = type,
+                cost            = cost,
+                canAfford       = cost.all { (res, qty) -> pool.has(res, qty.toFloat()) },
                 unassignedCount = unassignedPool.count(type)
             )
         }
@@ -147,4 +172,13 @@ class FactoryModel(
         }
         return result
     }
+
+    private fun buildQueueEntries(): List<QueueDisplayEntry> =
+        constructionQueue.entries.map { entry ->
+            QueueDisplayEntry(
+                type          = entry.type,
+                progress      = 1f - (entry.remainingTime / entry.totalTime).coerceIn(0f, 1f),
+                remainingTime = entry.remainingTime.coerceAtLeast(0f)
+            )
+        }
 }

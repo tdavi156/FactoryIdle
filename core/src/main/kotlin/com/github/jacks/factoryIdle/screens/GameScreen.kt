@@ -6,9 +6,16 @@ import com.badlogic.gdx.scenes.scene2d.ui.Stack
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.github.jacks.factoryIdle.FactoryIdle
+import com.github.jacks.factoryIdle.components.BuildingComponent
+import com.github.jacks.factoryIdle.components.FuelConsumerComponent
+import com.github.jacks.factoryIdle.components.ProducerComponent
+import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
+import com.github.jacks.factoryIdle.data.BuildingType
+import com.github.jacks.factoryIdle.data.ConstructionQueue
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.LifetimeMiningStats
 import com.github.jacks.factoryIdle.data.RecipeRegistry
+import com.github.jacks.factoryIdle.data.Resource
 import com.github.jacks.factoryIdle.data.UnassignedPool
 import com.github.jacks.factoryIdle.data.UnlockRegistry
 import com.github.jacks.factoryIdle.data.buildPhase1Milestones
@@ -42,6 +49,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     private val unlockRegistry      = UnlockRegistry()
     private val unassignedPool      = UnassignedPool()
     private val recipeRegistry      = RecipeRegistry()
+    private val constructionQueue   = ConstructionQueue()
 
     private val entityWorld: World = configureWorld {
         injectables {
@@ -49,6 +57,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
             add(lifetimeMiningStats)
             add(unlockRegistry)
             add(recipeRegistry)
+            add(constructionQueue)
         }
         systems {
             add(PoolTickSystem())
@@ -60,7 +69,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
 
     private val navigationModel  = NavigationModel()
     private val resourceBarModel = ResourceBarModel(globalResourcePool, lifetimeMiningStats, unlockRegistry)
-    private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry)
+    private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry, constructionQueue)
     private val resourceBarView  = ResourceBarView(resourceBarModel)
     private val factoryView      = FactoryView(factoryModel)
     private val powerView        = PowerView()
@@ -104,11 +113,26 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     }
 
     override fun render(delta: Float) {
+        constructionQueue.advance(delta)?.let { completed ->
+            createBuildingEntity(completed.type)
+        }
         entityWorld.update(delta)
         resourceBarModel.update(delta)
         factoryModel.update(delta)
         stage.act(delta)
         stage.draw()
+    }
+
+    private fun createBuildingEntity(type: BuildingType) {
+        entityWorld.entity {
+            it += BuildingComponent(type)
+            it += ProducerComponent()
+            it += FuelConsumerComponent(Resource.COAL, COAL_FUEL_RATE)
+            it += ProductionSatisfactionComponent(
+                declaredRates = mutableMapOf(Resource.COAL to COAL_FUEL_RATE)
+            )
+        }
+        unassignedPool.add(type, 1)
     }
 
     override fun dispose() {
@@ -119,6 +143,8 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     companion object {
         const val RESOURCE_BAR_HEIGHT = 52f
         const val NAV_WIDTH = 64f
+        // ~2 coal/min per building — tuned from design doc "3 buildings × ~2 coal/min"
+        const val COAL_FUEL_RATE = 2f / 60f
         val log = logger<FactoryIdle>()
     }
 }

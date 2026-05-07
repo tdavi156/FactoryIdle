@@ -21,14 +21,13 @@ import com.github.jacks.factoryIdle.ui.smIconKey
 import com.github.jacks.factoryIdle.ui.models.BuildMenuEntry
 import com.github.jacks.factoryIdle.ui.models.FactoryModel
 import com.github.jacks.factoryIdle.ui.models.PlacedBuildingData
+import com.github.jacks.factoryIdle.ui.models.QueueDisplayEntry
 import com.github.quillraven.fleks.Entity
-import ktx.log.logger
 import ktx.scene2d.Scene2DSkin
 
 class FactoryView(private val model: FactoryModel) : Table() {
 
     companion object {
-        private val log = logger<FactoryView>()
         private const val LEFT_PANEL_WIDTH = 280f
         private const val CARD_ICON_SIZE   = 32f
         private const val STATUS_DOT_SIZE  = 12f
@@ -76,6 +75,22 @@ class FactoryView(private val model: FactoryModel) : Table() {
         buildMenuContent.clearChildren()
         buildMenuContent.top().left()
 
+        // Construction queue section
+        if (model.queueEntries.isNotEmpty()) {
+            val hdr = Label("Under Construction", skin, Labels.BODY_BOLD())
+            hdr.color.set(0.87f, 0.72f, 0.23f, 1f)
+            buildMenuContent.add(hdr).left().padBottom(4f)
+            buildMenuContent.row()
+
+            for (qe in model.queueEntries) {
+                buildMenuContent.add(queueRow(qe)).expandX().fillX().pad(2f)
+                buildMenuContent.row()
+            }
+
+            buildMenuContent.add(divider()).expandX().fillX().height(1f).padTop(6f).padBottom(6f)
+            buildMenuContent.row()
+        }
+
         for (entry in model.buildMenuEntries) {
             buildMenuContent.add(buildMenuRow(entry)).expandX().fillX().pad(2f)
             buildMenuContent.row()
@@ -99,6 +114,32 @@ class FactoryView(private val model: FactoryModel) : Table() {
         }
 
         buildMenuContent.add(Actor()).expand()
+    }
+
+    private fun queueRow(qe: QueueDisplayEntry): Table {
+        val row = Table()
+
+        val icon = Image(skin.getDrawable(qe.type.iconKey()))
+        row.add(icon).size(24f).padRight(6f).top()
+
+        val infoCol = Table()
+        infoCol.add(Label(qe.type.displayName, skin, Labels.BODY())).left().expandX().fillX()
+        infoCol.row()
+
+        val bar = SatisfactionBar(
+            fillDrawable  = skin.getDrawable(Drawables.PROGRESS_FILL_GREEN()),
+            trackDrawable = skin.getDrawable(Drawables.PROGRESS_TRACK()),
+            satisfaction  = qe.progress
+        )
+        infoCol.add(bar).expandX().fillX().height(SAT_BAR_HEIGHT).padTop(3f)
+
+        row.add(infoCol).expandX().fillX()
+
+        val timeLbl = Label("%.1fs".format(qe.remainingTime), skin, Labels.SMALL())
+        timeLbl.color.set(0.47f, 0.50f, 0.56f, 1f)
+        row.add(timeLbl).padLeft(8f).width(36f).right()
+
+        return row
     }
 
     private fun buildMenuRow(entry: BuildMenuEntry): Table {
@@ -128,7 +169,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
         btn.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent, actor: Actor) {
                 if (!btn.isDisabled) {
-                    log.debug { "Construction coming in Step 7 — ${entry.type.displayName}" }
+                    model.buildBuilding(entry)
                 }
             }
         })

@@ -14,6 +14,7 @@ class FuelSystem : IteratingSystem(
 ) {
     override fun onTickEntity(entity: Entity) {
         if (entity has BuildingGroupComponent && entity[BuildingGroupComponent].paused) return
+        if (entity.getOrNull(ProducerComponent)?.groupState == GroupState.NO_RECIPE) return
 
         val fuel = entity[FuelConsumerComponent]
         val sat  = entity[ProductionSatisfactionComponent]
