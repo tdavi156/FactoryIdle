@@ -1,7 +1,7 @@
 package com.github.jacks.factoryIdle.systems
 
-import com.github.jacks.factoryIdle.components.BuildingGroup
-import com.github.jacks.factoryIdle.components.ProductionSatisfaction
+import com.github.jacks.factoryIdle.components.BuildingGroupComponent
+import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.GroupPriority
 import com.github.jacks.factoryIdle.data.Resource
@@ -12,13 +12,13 @@ import com.github.quillraven.fleks.World.Companion.family
 class PoolTickSystem : IntervalSystem() {
 
     private val globalPool = world.inject<GlobalResourcePool>()
-    private val satisfactionFamily = world.family { all(ProductionSatisfaction) }
+    private val satisfactionFamily = world.family { all(ProductionSatisfactionComponent) }
 
     override fun onTick() {
         // Collect active entities
         val active = mutableListOf<Entity>()
         satisfactionFamily.forEach { entity ->
-            val paused = entity has BuildingGroup && entity[BuildingGroup].paused
+            val paused = entity has BuildingGroupComponent && entity[BuildingGroupComponent].paused
             if (!paused) active.add(entity)
         }
 
@@ -27,8 +27,8 @@ class PoolTickSystem : IntervalSystem() {
         // resource → sorted demand list
         val demandMap = mutableMapOf<Resource, MutableList<Demand>>()
         for (entity in active) {
-            val sat = entity[ProductionSatisfaction]
-            val priority = if (entity has BuildingGroup) entity[BuildingGroup].priority else GroupPriority.NORMAL
+            val sat = entity[ProductionSatisfactionComponent]
+            val priority = if (entity has BuildingGroupComponent) entity[BuildingGroupComponent].priority else GroupPriority.NORMAL
             for ((resource, rate) in sat.declaredRates) {
                 if (rate > 0f) {
                     demandMap.getOrPut(resource) { mutableListOf() }
@@ -65,7 +65,7 @@ class PoolTickSystem : IntervalSystem() {
 
         // Write back: resourceSatisfaction map + currentSatisfaction (min across all declared)
         for (entity in active) {
-            val sat = entity[ProductionSatisfaction]
+            val sat = entity[ProductionSatisfactionComponent]
             sat.resourceSatisfaction.clear()
 
             if (sat.declaredRates.isEmpty()) {

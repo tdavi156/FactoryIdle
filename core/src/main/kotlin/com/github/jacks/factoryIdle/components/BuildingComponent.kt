@@ -4,9 +4,9 @@ import com.github.jacks.factoryIdle.data.BuildingType
 import com.github.quillraven.fleks.Component
 import com.github.quillraven.fleks.ComponentType
 
-data class Building(
+data class BuildingComponent(
     val type: BuildingType
-) : Component<Building> {
-    override fun type() = Building
-    companion object : ComponentType<Building>()
+) : Component<BuildingComponent> {
+    override fun type() = BuildingComponent
+    companion object : ComponentType<BuildingComponent>()
 }

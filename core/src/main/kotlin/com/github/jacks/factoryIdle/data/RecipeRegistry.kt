@@ -16,7 +16,12 @@ class RecipeRegistry {
                 duration = 5f
             )
         ),
-        BuildingType.BASIC_MINER to emptyList()
+        BuildingType.BASIC_MINER to listOf(
+            Recipe(inputs = emptyMap(), outputs = mapOf(Resource.IRON_ORE   to 1f), duration = 4f),
+            Recipe(inputs = emptyMap(), outputs = mapOf(Resource.COAL       to 1f), duration = 4f),
+            Recipe(inputs = emptyMap(), outputs = mapOf(Resource.STONE      to 1f), duration = 4f),
+            Recipe(inputs = emptyMap(), outputs = mapOf(Resource.COPPER_ORE to 1f), duration = 4f)
+        )
     )
 
     private val constructionCosts: Map<BuildingType, Map<Resource, Int>> = mapOf(

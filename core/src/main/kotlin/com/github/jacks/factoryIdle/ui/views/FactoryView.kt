@@ -9,7 +9,6 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable
-import com.github.jacks.factoryIdle.data.BuildingType
 import com.github.jacks.factoryIdle.data.GroupState
 import com.github.jacks.factoryIdle.data.Recipe
 import com.github.jacks.factoryIdle.data.Resource
@@ -51,7 +50,6 @@ class FactoryView(private val model: FactoryModel) : Table() {
     private val rightContent = Table()
 
     init {
-        // Root: horizontal split
         val leftPanel = Table()
         leftPanel.background = skin.getDrawable(Drawables.PANEL_BG())
         leftPanel.add(buildMenuScroll).expand().fill().pad(PANEL_PAD)
@@ -83,7 +81,6 @@ class FactoryView(private val model: FactoryModel) : Table() {
             buildMenuContent.row()
         }
 
-        // Unassigned counts
         val anyUnassigned = model.buildMenuEntries.any { it.unassignedCount > 0 }
         if (anyUnassigned) {
             buildMenuContent.add(divider()).expandX().fillX().height(1f).padTop(6f).padBottom(2f)
@@ -92,30 +89,26 @@ class FactoryView(private val model: FactoryModel) : Table() {
                 if (entry.unassignedCount > 0) {
                     val lbl = Label(
                         "${entry.type.displayName}: ${entry.unassignedCount} unassigned",
-                        skin,
-                        Labels.SMALL()
+                        skin, Labels.SMALL()
                     )
-                    lbl.color.set(0.47f, 0.50f, 0.56f, 1f)   // text_dim #7a8090
+                    lbl.color.set(0.47f, 0.50f, 0.56f, 1f)
                     buildMenuContent.add(lbl).left().padLeft(4f).padTop(2f)
                     buildMenuContent.row()
                 }
             }
         }
 
-        buildMenuContent.add(Actor()).expand()  // spacer pushes content to top
+        buildMenuContent.add(Actor()).expand()
     }
 
     private fun buildMenuRow(entry: BuildMenuEntry): Table {
         val row = Table()
 
-        // Building icon
         val icon = Image(skin.getDrawable(entry.type.iconKey()))
         row.add(icon).size(CARD_ICON_SIZE).padRight(8f)
 
-        // Name + cost column
         val infoCol = Table()
-        val nameLabel = Label(entry.type.displayName, skin, Labels.BODY())
-        infoCol.add(nameLabel).left().expandX().fillX()
+        infoCol.add(Label(entry.type.displayName, skin, Labels.BODY())).left().expandX().fillX()
         infoCol.row()
 
         val costRow = Table()
@@ -123,14 +116,13 @@ class FactoryView(private val model: FactoryModel) : Table() {
             val rscIcon = Image(skin.getDrawable(resource.smIconKey()))
             costRow.add(rscIcon).size(16f).padRight(2f)
             val costLabel = Label("$qty", skin, Labels.SMALL())
-            if (!entry.canAfford) costLabel.color.set(0.75f, 0.22f, 0.17f, 1f)  // #c0392b
+            if (!entry.canAfford) costLabel.color.set(0.75f, 0.22f, 0.17f, 1f)
             costRow.add(costLabel).padRight(6f)
         }
         infoCol.add(costRow).left()
 
         row.add(infoCol).expandX().fillX().padRight(8f)
 
-        // Build button
         val btn = TextButton("Build", skin, Buttons.ACCENT())
         btn.isDisabled = !entry.canAfford
         btn.addListener(object : ChangeListener() {
@@ -158,7 +150,6 @@ class FactoryView(private val model: FactoryModel) : Table() {
                 showDetailPanel(data)
                 return
             }
-            // entity no longer exists — fall through to list
             model.selectBuilding(null)
         }
 
@@ -195,28 +186,21 @@ class FactoryView(private val model: FactoryModel) : Table() {
         card.background = cardBackground(data.groupState)
         card.pad(CARD_PAD)
 
-        // Building icon
         val icon = Image(skin.getDrawable(data.type.iconKey()))
         card.add(icon).size(CARD_ICON_SIZE).padRight(8f).top()
 
-        // Name + recipe column
         val infoCol = Table()
-        val nameLabel = Label(data.type.displayName, skin, Labels.BODY())
-        infoCol.add(nameLabel).left().expandX().fillX()
+        infoCol.add(Label(data.type.displayName, skin, Labels.BODY())).left().expandX().fillX()
         infoCol.row()
-
-        val recipeLabel = recipeLabel(data)
-        infoCol.add(recipeLabel).left()
+        infoCol.add(recipeLabel(data)).left()
 
         card.add(infoCol).expandX().fillX().top()
 
-        // Status dot (right side)
         val dot = Image(statusDot(data.groupState))
         card.add(dot).size(STATUS_DOT_SIZE).top().padLeft(8f)
 
         card.row()
 
-        // Satisfaction bar — spans full width
         if (data.groupState != GroupState.STALLED && data.currentSatisfaction > 0f) {
             val bar = SatisfactionBar(
                 fillDrawable  = satisfactionFill(data.currentSatisfaction),
@@ -227,7 +211,6 @@ class FactoryView(private val model: FactoryModel) : Table() {
             card.row()
         }
 
-        // Click to open detail
         card.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent, actor: Actor) {
                 model.selectBuilding(data.entity)
@@ -238,17 +221,9 @@ class FactoryView(private val model: FactoryModel) : Table() {
     }
 
     private fun recipeLabel(data: PlacedBuildingData): Label {
-        val text = when {
-            data.recipe != null -> {
-                val outKey = data.recipe.outputs.keys.firstOrNull()
-                outKey?.displayName ?: "Unknown recipe"
-            }
-            data.assignedResource != null -> data.assignedResource.displayName
-            else -> "No recipe"
-        }
+        val text = data.recipe?.outputs?.keys?.firstOrNull()?.displayName ?: "No recipe"
         val lbl = Label(text, skin, Labels.SMALL())
-        if (data.recipe == null && data.assignedResource == null)
-            lbl.color.set(0.47f, 0.50f, 0.56f, 1f)
+        if (data.recipe == null) lbl.color.set(0.47f, 0.50f, 0.56f, 1f)
         return lbl
     }
 
@@ -258,24 +233,19 @@ class FactoryView(private val model: FactoryModel) : Table() {
         val panel = Table()
         panel.top().left()
 
-        // Header row: back button + building name
+        // Header
         val backBtn = TextButton("← Back", skin, Buttons.DEFAULT())
         backBtn.addListener(object : ChangeListener() {
-            override fun changed(event: ChangeEvent, actor: Actor) {
-                model.selectBuilding(null)
-            }
+            override fun changed(event: ChangeEvent, actor: Actor) { model.selectBuilding(null) }
         })
-        val nameLabel = Label(data.type.displayName, skin, Labels.HEADING())
-
         val headerRow = Table()
         headerRow.add(backBtn).width(80f).height(28f).padRight(12f)
-        headerRow.add(nameLabel).expandX().fillX().left()
+        headerRow.add(Label(data.type.displayName, skin, Labels.HEADING())).expandX().fillX().left()
         panel.add(headerRow).expandX().fillX().padBottom(10f)
         panel.row()
 
-        // State indicator
-        val stateText = stateDescription(data)
-        val stateLabel = Label(stateText, skin, Labels.BODY())
+        // State
+        val stateLabel = Label(stateDescription(data), skin, Labels.BODY())
         stateLabel.color.set(stateColor(data.groupState))
         panel.add(stateLabel).left().padBottom(8f)
         panel.row()
@@ -283,15 +253,10 @@ class FactoryView(private val model: FactoryModel) : Table() {
         panel.add(divider()).expandX().fillX().height(1f).padBottom(8f)
         panel.row()
 
-        // Recipe / resource picker
-        val pickerHeader = Label(
-            if (data.type == BuildingType.BASIC_MINER) "Assign Resource" else "Assign Recipe",
-            skin, Labels.BODY_BOLD()
-        )
-        panel.add(pickerHeader).left().padBottom(4f)
+        // Recipe picker
+        panel.add(Label("Assign Recipe", skin, Labels.BODY_BOLD())).left().padBottom(4f)
         panel.row()
-
-        addPickerRows(panel, data)
+        addRecipePicker(panel, data)
         panel.row()
 
         panel.add(divider()).expandX().fillX().height(1f).padTop(4f).padBottom(8f)
@@ -299,8 +264,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
 
         // Per-input satisfaction breakdown
         if (data.resourceSatisfaction.isNotEmpty()) {
-            val breakdownHeader = Label("Input Satisfaction", skin, Labels.BODY_BOLD())
-            panel.add(breakdownHeader).left().padBottom(4f)
+            panel.add(Label("Input Satisfaction", skin, Labels.BODY_BOLD())).left().padBottom(4f)
             panel.row()
             addSatisfactionBreakdown(panel, data)
             panel.row()
@@ -310,7 +274,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
         if (data.hasFuelConsumer) {
             val fuelText = if (data.isFuelStarved) "Fuel: STARVED" else "Fuel: OK"
             val fuelLabel = Label(fuelText, skin, Labels.SMALL())
-            if (data.isFuelStarved) fuelLabel.color.set(0.90f, 0.49f, 0.13f, 1f)  // #e67e22
+            if (data.isFuelStarved) fuelLabel.color.set(0.90f, 0.49f, 0.13f, 1f)
             panel.add(fuelLabel).left().padBottom(8f)
             panel.row()
         }
@@ -319,17 +283,14 @@ class FactoryView(private val model: FactoryModel) : Table() {
         panel.row()
 
         // Pause toggle
-        val pauseText = if (data.paused) "Unpause" else "Pause"
-        val pauseBtn = TextButton(pauseText, skin, Buttons.DEFAULT())
+        val pauseBtn = TextButton(if (data.paused) "Unpause" else "Pause", skin, Buttons.DEFAULT())
         pauseBtn.addListener(object : ChangeListener() {
-            override fun changed(event: ChangeEvent, actor: Actor) {
-                model.togglePause(data.entity)
-            }
+            override fun changed(event: ChangeEvent, actor: Actor) { model.togglePause(data.entity) }
         })
         panel.add(pauseBtn).width(100f).height(32f).left()
         panel.row()
 
-        panel.add(Actor()).expand()  // spacer
+        panel.add(Actor()).expand()
 
         val scroll = ScrollPane(panel, skin).apply {
             setScrollingDisabled(true, false)
@@ -338,43 +299,30 @@ class FactoryView(private val model: FactoryModel) : Table() {
         rightContent.add(scroll).expand().fill()
     }
 
-    private fun addPickerRows(panel: Table, data: PlacedBuildingData) {
-        if (data.type == BuildingType.BASIC_MINER) {
-            for (resource in Resource.values()) {
-                if (resource.category.name != "RAW") continue
-                addResourcePickerRow(panel, data.entity, resource, data.assignedResource == resource)
-            }
-        } else {
-            val recipes = model.recipesFor(data.type)
-            if (recipes.isEmpty()) {
-                val noRecipesLabel = Label("No recipes available", skin, Labels.SMALL())
-                noRecipesLabel.color.set(0.47f, 0.50f, 0.56f, 1f)
-                panel.add(noRecipesLabel).left().padBottom(4f)
-                panel.row()
-            } else {
-                for (recipe in recipes) {
-                    addRecipePickerRow(panel, data.entity, recipe, data.recipe == recipe)
-                }
-            }
+    private fun addRecipePicker(panel: Table, data: PlacedBuildingData) {
+        val recipes = model.recipesFor(data.type)
+        if (recipes.isEmpty()) {
+            val lbl = Label("No recipes available", skin, Labels.SMALL())
+            lbl.color.set(0.47f, 0.50f, 0.56f, 1f)
+            panel.add(lbl).left().padBottom(4f)
+            panel.row()
+            return
+        }
+
+        for (recipe in recipes) {
+            addRecipeRow(panel, data.entity, recipe, data.recipe == recipe)
         }
     }
 
-    private fun addRecipePickerRow(
-        panel: Table,
-        entity: Entity,
-        recipe: Recipe,
-        selected: Boolean
-    ) {
+    private fun addRecipeRow(panel: Table, entity: Entity, recipe: Recipe, selected: Boolean) {
         val outputResource = recipe.outputs.keys.firstOrNull()
-        val outputName = outputResource?.displayName ?: "Unknown"
-
         val row = Table()
+
         if (outputResource != null) {
-            val icon = Image(skin.getDrawable(outputResource.smIconKey()))
-            row.add(icon).size(20f).padRight(6f)
+            row.add(Image(skin.getDrawable(outputResource.smIconKey()))).size(20f).padRight(6f)
         }
-        val lbl = Label(outputName, skin, Labels.BODY())
-        row.add(lbl).expandX().fillX().left()
+        row.add(Label(outputResource?.displayName ?: "Unknown", skin, Labels.BODY()))
+            .expandX().fillX().left()
 
         if (!selected) {
             val btn = TextButton("Assign", skin, Buttons.DEFAULT())
@@ -385,39 +333,9 @@ class FactoryView(private val model: FactoryModel) : Table() {
             })
             row.add(btn).width(72f).height(28f)
         } else {
-            val selectedLabel = Label("✓", skin, Labels.BODY())
-            selectedLabel.color.set(0.15f, 0.68f, 0.38f, 1f)
-            row.add(selectedLabel).width(72f)
-        }
-
-        panel.add(row).expandX().fillX().padBottom(3f)
-        panel.row()
-    }
-
-    private fun addResourcePickerRow(
-        panel: Table,
-        entity: Entity,
-        resource: Resource,
-        selected: Boolean
-    ) {
-        val row = Table()
-        val icon = Image(skin.getDrawable(resource.smIconKey()))
-        row.add(icon).size(20f).padRight(6f)
-        val lbl = Label(resource.displayName, skin, Labels.BODY())
-        row.add(lbl).expandX().fillX().left()
-
-        if (!selected) {
-            val btn = TextButton("Assign", skin, Buttons.DEFAULT())
-            btn.addListener(object : ChangeListener() {
-                override fun changed(event: ChangeEvent, actor: Actor) {
-                    model.assignMinerResource(entity, resource)
-                }
-            })
-            row.add(btn).width(72f).height(28f)
-        } else {
-            val selectedLabel = Label("✓", skin, Labels.BODY())
-            selectedLabel.color.set(0.15f, 0.68f, 0.38f, 1f)  // #27ae60
-            row.add(selectedLabel).width(72f)
+            val check = Label("✓", skin, Labels.BODY())
+            check.color.set(0.15f, 0.68f, 0.38f, 1f)
+            row.add(check).width(72f)
         }
 
         panel.add(row).expandX().fillX().padBottom(3f)
@@ -432,20 +350,16 @@ class FactoryView(private val model: FactoryModel) : Table() {
             val availPerSec  = neededPerSec * sat
             val pct          = (sat * 100f).toInt()
 
-            val icon = Image(skin.getDrawable(resource.smIconKey()))
-
+            val row = Table()
+            row.add(Image(skin.getDrawable(resource.smIconKey()))).size(16f).padRight(6f)
             val desc = Label(
-                "${resource.displayName}  %.1f/s avail, %.1f/s needed ($pct%%)"
-                    .format(availPerSec, neededPerSec),
-                skin,
-                Labels.SMALL()
+                "${resource.displayName}  %.1f/s avail, %.1f/s needed ($pct%%)".format(availPerSec, neededPerSec),
+                skin, Labels.SMALL()
             )
             if (sat < 1f) desc.color.set(0.90f, 0.49f, 0.13f, 1f)
+            row.add(desc).expandX().fillX().left()
 
-            val breakdownRow = Table()
-            breakdownRow.add(icon).size(16f).padRight(6f)
-            breakdownRow.add(desc).expandX().fillX().left()
-            panel.add(breakdownRow).expandX().fillX().padBottom(2f)
+            panel.add(row).expandX().fillX().padBottom(2f)
             panel.row()
         }
     }
@@ -468,14 +382,13 @@ class FactoryView(private val model: FactoryModel) : Table() {
         }
     }
 
-    private fun stateColor(state: GroupState): com.badlogic.gdx.graphics.Color =
-        when (state) {
-            GroupState.RUNNING      -> com.badlogic.gdx.graphics.Color.valueOf("27ae60")
-            GroupState.STALLED      -> com.badlogic.gdx.graphics.Color.valueOf("f39c12")
-            GroupState.FUEL_STARVED -> com.badlogic.gdx.graphics.Color.valueOf("e67e22")
-            GroupState.PAUSED       -> com.badlogic.gdx.graphics.Color.valueOf("c0392b")
-            GroupState.NO_RECIPE    -> com.badlogic.gdx.graphics.Color.valueOf("7a8090")
-        }
+    private fun stateColor(state: GroupState): com.badlogic.gdx.graphics.Color = when (state) {
+        GroupState.RUNNING      -> com.badlogic.gdx.graphics.Color.valueOf("27ae60")
+        GroupState.STALLED      -> com.badlogic.gdx.graphics.Color.valueOf("f39c12")
+        GroupState.FUEL_STARVED -> com.badlogic.gdx.graphics.Color.valueOf("e67e22")
+        GroupState.PAUSED       -> com.badlogic.gdx.graphics.Color.valueOf("c0392b")
+        GroupState.NO_RECIPE    -> com.badlogic.gdx.graphics.Color.valueOf("7a8090")
+    }
 
     private fun cardBackground(state: GroupState): Drawable = when (state) {
         GroupState.RUNNING      -> skin.getDrawable(Drawables.CARD_BG_RUNNING())

@@ -1,8 +1,8 @@
 package com.github.jacks.factoryIdle.systems
 
-import com.github.jacks.factoryIdle.components.BuildingGroup
-import com.github.jacks.factoryIdle.components.Producer
-import com.github.jacks.factoryIdle.components.ProductionSatisfaction
+import com.github.jacks.factoryIdle.components.BuildingGroupComponent
+import com.github.jacks.factoryIdle.components.ProducerComponent
+import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.GroupState
 import com.github.jacks.factoryIdle.data.LifetimeMiningStats
@@ -12,17 +12,17 @@ import com.github.quillraven.fleks.World.Companion.family
 import kotlin.math.floor
 
 class ProductionSystem : IteratingSystem(
-    family { all(Producer, ProductionSatisfaction) }
+    family { all(ProducerComponent, ProductionSatisfactionComponent) }
 ) {
-    private val globalPool = world.inject<GlobalResourcePool>()
+    private val globalPool    = world.inject<GlobalResourcePool>()
     private val lifetimeStats = world.inject<LifetimeMiningStats>()
 
     override fun onTickEntity(entity: Entity) {
-        if (entity has BuildingGroup && entity[BuildingGroup].paused) return
+        if (entity has BuildingGroupComponent && entity[BuildingGroupComponent].paused) return
 
-        val producer = entity[Producer]
-        val sat = entity[ProductionSatisfaction]
-        val recipe = producer.recipe
+        val producer = entity[ProducerComponent]
+        val sat      = entity[ProductionSatisfactionComponent]
+        val recipe   = producer.recipe
 
         if (recipe == null) {
             producer.groupState = GroupState.NO_RECIPE

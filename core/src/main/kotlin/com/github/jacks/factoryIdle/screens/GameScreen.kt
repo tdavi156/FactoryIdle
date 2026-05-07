@@ -14,7 +14,6 @@ import com.github.jacks.factoryIdle.data.UnlockRegistry
 import com.github.jacks.factoryIdle.data.buildPhase1Milestones
 import com.github.jacks.factoryIdle.systems.FuelSystem
 import com.github.jacks.factoryIdle.systems.MilestoneSystem
-import com.github.jacks.factoryIdle.systems.MinerSystem
 import com.github.jacks.factoryIdle.systems.PoolTickSystem
 import com.github.jacks.factoryIdle.systems.ProductionSystem
 import com.github.jacks.factoryIdle.ui.models.FactoryModel
@@ -54,7 +53,6 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
         systems {
             add(PoolTickSystem())
             add(ProductionSystem())
-            add(MinerSystem())
             add(FuelSystem())
             add(MilestoneSystem(buildPhase1Milestones(globalResourcePool, lifetimeMiningStats, unlockRegistry)))
         }

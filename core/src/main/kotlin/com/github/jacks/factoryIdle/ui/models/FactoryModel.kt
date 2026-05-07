@@ -1,11 +1,10 @@
 package com.github.jacks.factoryIdle.ui.models
 
-import com.github.jacks.factoryIdle.components.Building
-import com.github.jacks.factoryIdle.components.BuildingGroup
-import com.github.jacks.factoryIdle.components.FuelConsumer
-import com.github.jacks.factoryIdle.components.Miner
-import com.github.jacks.factoryIdle.components.Producer
-import com.github.jacks.factoryIdle.components.ProductionSatisfaction
+import com.github.jacks.factoryIdle.components.BuildingComponent
+import com.github.jacks.factoryIdle.components.BuildingGroupComponent
+import com.github.jacks.factoryIdle.components.FuelConsumerComponent
+import com.github.jacks.factoryIdle.components.ProducerComponent
+import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.BuildingType
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.GroupState
@@ -30,7 +29,6 @@ data class PlacedBuildingData(
     val groupState: GroupState,
     val currentSatisfaction: Float,
     val recipe: Recipe?,
-    val assignedResource: Resource?,
     val hasFuelConsumer: Boolean,
     val isFuelStarved: Boolean,
     val resourceSatisfaction: Map<Resource, Float>,
@@ -44,7 +42,7 @@ class FactoryModel(
     private val unassignedPool: UnassignedPool,
     private val recipeRegistry: RecipeRegistry
 ) {
-    private val buildingFamily = world.family { all(Building) }
+    private val buildingFamily = world.family { all(BuildingComponent) }
 
     private var _buildMenuEntries: List<BuildMenuEntry> = emptyList()
     private var _placedBuildings: List<PlacedBuildingData> = emptyList()
@@ -60,12 +58,12 @@ class FactoryModel(
     fun onChanged(listener: () -> Unit) { changeListeners.add(listener) }
 
     fun update(delta: Float) {
-        val newMenu = buildBuildMenu()
+        val newMenu     = buildBuildMenu()
         val newBuildings = buildPlacedBuildings()
 
         if (newMenu != _buildMenuEntries || newBuildings != _placedBuildings) {
             _buildMenuEntries = newMenu
-            _placedBuildings = newBuildings
+            _placedBuildings  = newBuildings
             changeListeners.forEach { it() }
         }
     }
@@ -77,13 +75,13 @@ class FactoryModel(
 
     fun assignRecipe(entity: Entity, recipe: Recipe) {
         with(world) {
-            if (!(entity has Producer)) return
-            val producer = entity[Producer]
-            producer.recipe = recipe
-            producer.progress = 0f
+            if (!(entity has ProducerComponent)) return
+            val producer = entity[ProducerComponent]
+            producer.recipe     = recipe
+            producer.progress   = 0f
             producer.groupState = GroupState.NO_RECIPE
 
-            val sat = entity.getOrNull(ProductionSatisfaction) ?: return
+            val sat = entity.getOrNull(ProductionSatisfactionComponent) ?: return
             sat.declaredRates.clear()
             sat.fractionalAccumulator = 0f
             for ((resource, amount) in recipe.inputs) {
@@ -92,26 +90,12 @@ class FactoryModel(
         }
     }
 
-    fun assignMinerResource(entity: Entity, resource: Resource) {
-        with(world) {
-            if (!(entity has Miner)) return
-            val miner = entity[Miner]
-            miner.assignedResource = resource
-            miner.progress = 0f
-            miner.groupState = GroupState.NO_RECIPE
-
-            val sat = entity.getOrNull(ProductionSatisfaction) ?: return
-            sat.declaredRates.clear()
-            sat.fractionalAccumulator = 0f
-        }
-    }
-
     fun togglePause(entity: Entity) {
         with(world) {
-            val group = entity.getOrNull(BuildingGroup) ?: return
+            val group = entity.getOrNull(BuildingGroupComponent) ?: return
             group.paused = !group.paused
             if (group.paused) {
-                entity.getOrNull(ProductionSatisfaction)?.declaredRates?.clear()
+                entity.getOrNull(ProductionSatisfactionComponent)?.declaredRates?.clear()
             }
         }
         changeListeners.forEach { it() }
@@ -126,9 +110,9 @@ class FactoryModel(
         unlockRegistry.unlockedBuildingTypes().map { type ->
             val cost = recipeRegistry.constructionCostFor(type)
             BuildMenuEntry(
-                type = type,
-                cost = cost,
-                canAfford = cost.all { (res, qty) -> pool.has(res, qty.toFloat()) },
+                type          = type,
+                cost          = cost,
+                canAfford     = cost.all { (res, qty) -> pool.has(res, qty.toFloat()) },
                 unassignedCount = unassignedPool.count(type)
             )
         }
@@ -137,14 +121,13 @@ class FactoryModel(
         val result = mutableListOf<PlacedBuildingData>()
         with(world) {
             buildingFamily.forEach { entity ->
-                val building = entity[Building]
-                val producer = entity.getOrNull(Producer)
-                val miner    = entity.getOrNull(Miner)
-                val fuel     = entity.getOrNull(FuelConsumer)
-                val sat      = entity.getOrNull(ProductionSatisfaction)
-                val group    = entity.getOrNull(BuildingGroup)
+                val building = entity[BuildingComponent]
+                val producer = entity.getOrNull(ProducerComponent)
+                val fuel     = entity.getOrNull(FuelConsumerComponent)
+                val sat      = entity.getOrNull(ProductionSatisfactionComponent)
+                val group    = entity.getOrNull(BuildingGroupComponent)
 
-                val rawState = producer?.groupState ?: miner?.groupState ?: GroupState.NO_RECIPE
+                val rawState = producer?.groupState ?: GroupState.NO_RECIPE
                 val paused   = group?.paused ?: false
 
                 result.add(
@@ -154,7 +137,6 @@ class FactoryModel(
                         groupState           = if (paused) GroupState.PAUSED else rawState,
                         currentSatisfaction  = sat?.currentSatisfaction ?: 0f,
                         recipe               = producer?.recipe,
-                        assignedResource     = miner?.assignedResource,
                         hasFuelConsumer      = fuel != null,
                         isFuelStarved        = rawState == GroupState.FUEL_STARVED,
                         resourceSatisfaction = sat?.resourceSatisfaction?.toMap() ?: emptyMap(),
