@@ -15,9 +15,7 @@ import com.github.jacks.factoryIdle.data.Resource
 import com.github.jacks.factoryIdle.ui.Buttons
 import com.github.jacks.factoryIdle.ui.Drawables
 import com.github.jacks.factoryIdle.ui.Labels
-import com.github.jacks.factoryIdle.ui.iconKey
-import com.github.jacks.factoryIdle.ui.mdIconKey
-import com.github.jacks.factoryIdle.ui.smIconKey
+import com.github.jacks.factoryIdle.ui.smallIconKey
 import com.github.jacks.factoryIdle.ui.models.BuildMenuEntry
 import com.github.jacks.factoryIdle.ui.models.FactoryModel
 import com.github.jacks.factoryIdle.ui.models.PlacedBuildingData
@@ -119,7 +117,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
     private fun queueRow(qe: QueueDisplayEntry): Table {
         val row = Table()
 
-        val icon = Image(skin.getDrawable(qe.type.iconKey()))
+        val icon = Image(skin.getDrawable(qe.type.smallIconKey()))
         row.add(icon).size(24f).padRight(6f).top()
 
         val infoCol = Table()
@@ -145,7 +143,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
     private fun buildMenuRow(entry: BuildMenuEntry): Table {
         val row = Table()
 
-        val icon = Image(skin.getDrawable(entry.type.iconKey()))
+        val icon = Image(skin.getDrawable(entry.type.smallIconKey()))
         row.add(icon).size(CARD_ICON_SIZE).padRight(8f)
 
         val infoCol = Table()
@@ -154,7 +152,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
 
         val costRow = Table()
         for ((resource, qty) in entry.cost) {
-            val rscIcon = Image(skin.getDrawable(resource.smIconKey()))
+            val rscIcon = Image(skin.getDrawable(resource.smallIconKey()))
             costRow.add(rscIcon).size(16f).padRight(2f)
             val costLabel = Label("$qty", skin, Labels.SMALL())
             if (!entry.canAfford) costLabel.color.set(0.75f, 0.22f, 0.17f, 1f)
@@ -227,7 +225,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
         card.background = cardBackground(data.groupState)
         card.pad(CARD_PAD)
 
-        val icon = Image(skin.getDrawable(data.type.iconKey()))
+        val icon = Image(skin.getDrawable(data.type.smallIconKey()))
         card.add(icon).size(CARD_ICON_SIZE).padRight(8f).top()
 
         val infoCol = Table()
@@ -360,7 +358,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
         val row = Table()
 
         if (outputResource != null) {
-            row.add(Image(skin.getDrawable(outputResource.smIconKey()))).size(20f).padRight(6f)
+            row.add(Image(skin.getDrawable(outputResource.smallIconKey()))).size(20f).padRight(6f)
         }
         row.add(Label(outputResource?.displayName ?: "Unknown", skin, Labels.BODY()))
             .expandX().fillX().left()
@@ -392,7 +390,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
             val pct          = (sat * 100f).toInt()
 
             val row = Table()
-            row.add(Image(skin.getDrawable(resource.smIconKey()))).size(16f).padRight(6f)
+            row.add(Image(skin.getDrawable(resource.smallIconKey()))).size(16f).padRight(6f)
             val desc = Label(
                 "${resource.displayName}  %.1f/s avail, %.1f/s needed ($pct%%)".format(availPerSec, neededPerSec),
                 skin, Labels.SMALL()

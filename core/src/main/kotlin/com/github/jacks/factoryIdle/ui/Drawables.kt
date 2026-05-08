@@ -21,39 +21,59 @@ enum class Drawables {
     STATUS_RUNNING, STATUS_STALLED, STATUS_FUEL_STARVED, STATUS_PAUSED, STATUS_IDLE,
     // Navigation icons
     ICON_NAVIGATION_FACTORY, ICON_NAVIGATION_POWER, ICON_NAVIGATION_RESEARCH, ICON_NAVIGATION_PROGRESS, ICON_NAVIGATION_SETTINGS,
-    // Resource icons (sm = 20px, md = 36px)
-    ICON_RSC_IRON_ORE_SM, ICON_RSC_IRON_ORE_MD,
-    ICON_RSC_COAL_SM, ICON_RSC_COAL_MD,
-    ICON_RSC_STONE_SM, ICON_RSC_STONE_MD,
-    ICON_RSC_COPPER_ORE_SM, ICON_RSC_COPPER_ORE_MD,
-    ICON_RSC_IRON_PLATE_SM, ICON_RSC_IRON_PLATE_MD,
-    ICON_RSC_COPPER_PLATE_SM, ICON_RSC_COPPER_PLATE_MD,
-    // Building icons and art
-    ICON_BLD_STONE_FURNACE, ICON_BLD_BASIC_MINER,
-    BLD_ART_STONE_FURNACE, BLD_ART_BASIC_MINER;
+    // Raw resource icons (small = 32px, medium = 64px, large = 128px)
+    ICON_RESOURCE_IRON_ORE_SMALL, ICON_RESOURCE_IRON_ORE_MEDIUM, ICON_RESOURCE_IRON_ORE_LARGE,
+    ICON_RESOURCE_COAL_SMALL, ICON_RESOURCE_COAL_MEDIUM, ICON_RESOURCE_COAL_LARGE,
+    ICON_RESOURCE_STONE_SMALL, ICON_RESOURCE_STONE_MEDIUM, ICON_RESOURCE_STONE_LARGE,
+    ICON_RESOURCE_COPPER_ORE_SMALL, ICON_RESOURCE_COPPER_ORE_MEDIUM, ICON_RESOURCE_COPPER_ORE_LARGE,
+    // Processed material icons (small = 32px, medium = 64px, large = 128px)
+    ICON_PROCESSED_IRON_PLATE_SMALL, ICON_PROCESSED_IRON_PLATE_MEDIUM, ICON_PROCESSED_IRON_PLATE_LARGE,
+    ICON_PROCESSED_COPPER_PLATE_SMALL, ICON_PROCESSED_COPPER_PLATE_MEDIUM, ICON_PROCESSED_COPPER_PLATE_LARGE,
+    // Building icons (small = 32px, medium = 64px, large = 128px)
+    ICON_BUILDING_STONE_FURNACE_SMALL, ICON_BUILDING_STONE_FURNACE_MEDIUM, ICON_BUILDING_STONE_FURNACE_LARGE,
+    ICON_BUILDING_BASIC_MINER_SMALL, ICON_BUILDING_BASIC_MINER_MEDIUM, ICON_BUILDING_BASIC_MINER_LARGE;
 
     operator fun invoke() = name.lowercase()
 }
 
-fun Resource.smIconKey(): String = when (this) {
-    Resource.IRON_ORE     -> Drawables.ICON_RSC_IRON_ORE_SM()
-    Resource.COAL         -> Drawables.ICON_RSC_COAL_SM()
-    Resource.STONE        -> Drawables.ICON_RSC_STONE_SM()
-    Resource.COPPER_ORE   -> Drawables.ICON_RSC_COPPER_ORE_SM()
-    Resource.IRON_PLATE   -> Drawables.ICON_RSC_IRON_PLATE_SM()
-    Resource.COPPER_PLATE -> Drawables.ICON_RSC_COPPER_PLATE_SM()
+fun Resource.smallIconKey(): String = when (this) {
+    Resource.IRON_ORE     -> Drawables.ICON_RESOURCE_IRON_ORE_SMALL()
+    Resource.COAL         -> Drawables.ICON_RESOURCE_COAL_SMALL()
+    Resource.STONE        -> Drawables.ICON_RESOURCE_STONE_SMALL()
+    Resource.COPPER_ORE   -> Drawables.ICON_RESOURCE_COPPER_ORE_SMALL()
+    Resource.IRON_PLATE   -> Drawables.ICON_PROCESSED_IRON_PLATE_SMALL()
+    Resource.COPPER_PLATE -> Drawables.ICON_PROCESSED_COPPER_PLATE_SMALL()
 }
 
-fun Resource.mdIconKey(): String = when (this) {
-    Resource.IRON_ORE     -> Drawables.ICON_RSC_IRON_ORE_MD()
-    Resource.COAL         -> Drawables.ICON_RSC_COAL_MD()
-    Resource.STONE        -> Drawables.ICON_RSC_STONE_MD()
-    Resource.COPPER_ORE   -> Drawables.ICON_RSC_COPPER_ORE_MD()
-    Resource.IRON_PLATE   -> Drawables.ICON_RSC_IRON_PLATE_MD()
-    Resource.COPPER_PLATE -> Drawables.ICON_RSC_COPPER_PLATE_MD()
+fun Resource.mediumIconKey(): String = when (this) {
+    Resource.IRON_ORE     -> Drawables.ICON_RESOURCE_IRON_ORE_MEDIUM()
+    Resource.COAL         -> Drawables.ICON_RESOURCE_COAL_MEDIUM()
+    Resource.STONE        -> Drawables.ICON_RESOURCE_STONE_MEDIUM()
+    Resource.COPPER_ORE   -> Drawables.ICON_RESOURCE_COPPER_ORE_MEDIUM()
+    Resource.IRON_PLATE   -> Drawables.ICON_PROCESSED_IRON_PLATE_MEDIUM()
+    Resource.COPPER_PLATE -> Drawables.ICON_PROCESSED_COPPER_PLATE_MEDIUM()
 }
 
-fun BuildingType.iconKey(): String = when (this) {
-    BuildingType.STONE_FURNACE -> Drawables.ICON_BLD_STONE_FURNACE()
-    BuildingType.BASIC_MINER   -> Drawables.ICON_BLD_BASIC_MINER()
+fun Resource.largeIconKey(): String = when (this) {
+    Resource.IRON_ORE     -> Drawables.ICON_RESOURCE_IRON_ORE_LARGE()
+    Resource.COAL         -> Drawables.ICON_RESOURCE_COAL_LARGE()
+    Resource.STONE        -> Drawables.ICON_RESOURCE_STONE_LARGE()
+    Resource.COPPER_ORE   -> Drawables.ICON_RESOURCE_COPPER_ORE_LARGE()
+    Resource.IRON_PLATE   -> Drawables.ICON_PROCESSED_IRON_PLATE_LARGE()
+    Resource.COPPER_PLATE -> Drawables.ICON_PROCESSED_COPPER_PLATE_LARGE()
+}
+
+fun BuildingType.smallIconKey(): String = when (this) {
+    BuildingType.STONE_FURNACE -> Drawables.ICON_BUILDING_STONE_FURNACE_SMALL()
+    BuildingType.BASIC_MINER   -> Drawables.ICON_BUILDING_BASIC_MINER_SMALL()
+}
+
+fun BuildingType.mediumIconKey(): String = when (this) {
+    BuildingType.STONE_FURNACE -> Drawables.ICON_BUILDING_STONE_FURNACE_MEDIUM()
+    BuildingType.BASIC_MINER   -> Drawables.ICON_BUILDING_BASIC_MINER_MEDIUM()
+}
+
+fun BuildingType.largeIconKey(): String = when (this) {
+    BuildingType.STONE_FURNACE -> Drawables.ICON_BUILDING_STONE_FURNACE_LARGE()
+    BuildingType.BASIC_MINER   -> Drawables.ICON_BUILDING_BASIC_MINER_LARGE()
 }

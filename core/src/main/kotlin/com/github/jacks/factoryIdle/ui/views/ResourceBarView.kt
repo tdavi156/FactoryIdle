@@ -15,7 +15,7 @@ import com.github.jacks.factoryIdle.ui.Drawables
 import com.github.jacks.factoryIdle.ui.Labels
 import com.github.jacks.factoryIdle.ui.models.DisplayMode
 import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
-import com.github.jacks.factoryIdle.ui.smIconKey
+import com.github.jacks.factoryIdle.ui.smallIconKey
 import ktx.scene2d.Scene2DSkin
 
 class ResourceBarView(private val model: ResourceBarModel) : Table() {
@@ -139,7 +139,7 @@ class ResourceBarView(private val model: ResourceBarModel) : Table() {
 
             if (!collapsed) {
                 resources.forEach { resource ->
-                    val icon = Image(skin.getDrawable(resource.smIconKey()))
+                    val icon = Image(skin.getDrawable(resource.smallIconKey()))
                     resourceContent.add(icon).size(ICON_SIZE).padLeft(6f)
 
                     resourceContent.add(
