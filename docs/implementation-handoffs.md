@@ -2,7 +2,7 @@
 
 Each section is a self-contained prompt for a new Claude chat. The implementing chat has no memory of prior sessions — every prompt includes full context. Steps must be completed in order unless marked as independent.
 
-Steps 1–6 are complete. Steps 7–15 are pending.
+Steps 1–8 are complete. Steps 2 Redo and 9–16 are pending.
 
 ---
 
@@ -381,7 +381,93 @@ Use `String` keys for enum values (`.name`) rather than enum references — this
 
 ---
 
-## Step 9 — Research System & Science Packs
+## Step 9 — Mining View
+
+You are implementing the dedicated mining view and redesigning the hand-mining widget for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
+
+**The game in one paragraph:** No spatial world, no belts. All resources flow through a single `GlobalResourcePool`. The player starts by hand-mining raw resources. Buildings automate production. The core loop is hand mine → build → automate → balance.
+
+**What already exists:**
+- Navigation shell: `NavSidebarView`, `NavigationModel`, 5 nav views (Factory, Power, Research, Progress, Settings) — Mining must be added as a 6th
+- `ResourceBarModel` — complete mining model with `toggleMining(resource)`, `isHandMining(resource)`, `handMiningProgress(resource)`, `unlockedRawResources()`
+- `ResourceBarView` — has a mining widget on the left side (currently a row of buttons with progress bars); this widget must be redesigned (see below)
+- Full skin with all drawables, fonts, button styles
+- `Drawables` enum with `ICON_RESOURCE_*_SMALL/MEDIUM/LARGE`, `ICON_NAVIGATION_*` entries and `invoke()` returning `name.lowercase()`
+
+**What to build:**
+
+**`ui/Drawables.kt` — add one enum entry** after `ICON_NAVIGATION_SETTINGS`:
+```kotlin
+ICON_NAVIGATION_MINING,
+```
+`invoke()` produces `"icon_navigation_mining"` automatically. Also add a placeholder in `GameSkin.addPlaceholders()` in the Navigation icons block:
+```kotlin
+skin.addDrawable(Drawables.ICON_NAVIGATION_MINING(), placeholder("8b5e3c", 32, 32))
+```
+Note: the actual `icon_navigation_mining.png` asset does not yet exist — the placeholder displays until it is created and packed into the atlas.
+
+**`ui/models/MiningModel.kt`** — thin wrapper over `ResourceBarModel`, exposing only what the mining view needs:
+```kotlin
+class MiningModel(private val bar: ResourceBarModel) {
+    fun unlockedRawResources(): List<Resource> = bar.unlockedRawResources()
+    fun isHandMining(resource: Resource): Boolean = bar.isHandMining(resource)
+    fun miningProgress(resource: Resource): Float = bar.handMiningProgress(resource)
+    fun toggleMining(resource: Resource) = bar.toggleMining(resource)
+    fun onUpdate(listener: () -> Unit) = bar.onUpdate(listener)
+    fun onStructureChanged(listener: () -> Unit) = bar.onStructureChanged(listener)
+}
+```
+Instantiate in `GameScreen` using the same `ResourceBarModel` instance already there.
+
+**`ui/views/MiningView.kt`** — new full-screen navigation view
+
+A `Table` subclass. Layout: title label "Mining" at top, then a horizontally-wrapping grid of fixed-size resource cards. Cards never scale in size — only the column count changes with available width.
+
+**Column count** — compute in the card container's `layout()` override:
+```kotlin
+val cols = max(1, (parent.width / CARD_WIDTH).toInt())
+```
+Rebuild card rows whenever `onStructureChanged` fires or on first layout. Only show unlocked resources.
+
+**Resource card widget** (inner `Table`, fixed `180×220px`):
+- Background: `CARD_BG_RUNNING` nine-patch when actively mining this resource; `CARD_BG_IDLE` when not
+- Resource icon: `ICON_RESOURCE_*_LARGE` drawable, 128×128, centered in upper portion of card
+- Resource name: `Labels.BODY()`, centered below icon
+- Progress bar: spans full card width at the very bottom, height 8px. Track drawable: `PROGRESS_TRACK`, fill: `PROGRESS_FILL_GREEN`. Fill width = `miningProgress(resource) × cardWidth`. Visible at all times (empty track shown when not mining)
+- Entire card is one clickable unit — clicking calls `model.toggleMining(resource)`
+- Card background and progress bar refresh every frame via `onUpdate`
+
+**`ui/views/NavSidebarView.kt` update** — add Mining as the first nav button (above Factory):
+- Mining nav button at top of the sidebar
+- Uses `Drawables.ICON_NAVIGATION_MINING()` drawable
+- Wired to `navigationModel.show(miningView)` on click
+- Follows the same pattern as the existing nav buttons
+
+**`screens/GameScreen.kt` updates:**
+1. Instantiate `MiningModel(resourceBarModel)` and `MiningView(miningModel)` as class-level properties
+2. Register `miningView` with `navigationModel` alongside the other views
+3. Change default tab to: `navigationModel.show(miningView)` (previously `factoryView`)
+
+**`ui/views/ResourceBarView.kt` — redesign the mining widget** (left side of the resource bar)
+
+Replace the current progress-bar buttons with a compact toggle-button grid:
+- One button per unlocked RAW resource, arranged with a max of 3 per row
+- Each button: `ICON_RESOURCE_*_SMALL` drawable (20×20) + resource display name side by side inside the button label area
+- Uses `Buttons.DEFAULT()` style
+- Button `isChecked = true` when `model.isHandMining(resource)` is true — reflects active mining visually
+- To support the checked state visually, add a `checked` drawable to `DEFAULT` in `GameSkin.addButtonStyles()` — reuse the existing down drawable (no new asset needed):
+  ```kotlin
+  checked = skin.getDrawable(Drawables.BUTTON_DEFAULT_DOWN())
+  ```
+- Clicking a button calls `model.toggleMining(resource)`. Do NOT manually reset `isChecked` — let `onUpdate` sync it from model state each frame
+- No progress bar in this widget — progress is shown in the full MiningView only
+- Rebuild button list when `onStructureChanged` fires
+
+**Compile check:** `./gradlew core:compileKotlin` when done. Fix all errors before finishing.
+
+---
+
+## Step 10 — Research System & Science Packs
 
 You are implementing the research system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -454,7 +540,7 @@ Add `ResearchManager` to `GameScreen` as a class-level injectable.
 
 ---
 
-## Step 10a — Phase 2: Building Groups (ECS & Data)
+## Step 11a — Phase 2: Building Groups (ECS & Data)
 
 You are implementing the building group system (data/ECS layer) for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -464,7 +550,7 @@ You are implementing the building group system (data/ECS layer) for an idle fact
 - Individual building entities with `ProducerComponent`/`FuelConsumerComponent`/`ProductionSatisfactionComponent`. All building types (including miners) use `ProducerComponent`.
 - `BuildingGroupComponent` exists but is Phase 2 aware only
 - `UnlockRegistry` manages unlocked building types
-- Research system (Step 9) — the unlock trigger for groups is a research reward
+- Research system (Step 10) — the unlock trigger for groups is a research reward
 
 **Group unlock transition:**
 When the "Group Management I" research completes (Orange Science tier), fire a one-time transition:
@@ -523,12 +609,12 @@ No structural change required. Groups already have `BuildingGroup` component for
 
 ---
 
-## Step 10b — Phase 2: Group UI
+## Step 11b — Phase 2: Group UI
 
 You are implementing the building group UI for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
 
 **What already exists:**
-- Phase 2 ECS layer from Step 10a: `BuildingGroup`, `UnassignedPool`, group transition logic
+- Phase 2 ECS layer from Step 11a: `BuildingGroup`, `UnassignedPool`, group transition logic
 - Factory view from Step 6 (individual building cards) — replace with group card grid in Phase 2
 - Full skin with `CARD_BG_*`, `ICON_BLD_*`, `ICON_RSC_*`, `STATUS_*` drawables, `BUTTON_NAVIGATION_SELECTED`, etc.
 
@@ -585,7 +671,7 @@ Cycles through `LOWEST → LOW → NORMAL → HIGH → HIGHEST`. Never shows num
 
 ---
 
-## Step 11 — Bottleneck Inspector & Net Rate Display
+## Step 12 — Bottleneck Inspector & Net Rate Display
 
 You are implementing factory health diagnostics for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -631,7 +717,7 @@ Results rendered as a scrollable flagged list. Each entry: warning icon + descri
 
 ---
 
-## Step 12 — Nudge System & Tutorial
+## Step 13 — Nudge System & Tutorial
 
 You are implementing the in-game nudge and tutorial system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -696,7 +782,7 @@ L1 = visual pulse animation on the relevant UI element. L2 = one-line status tex
 
 ---
 
-## Step 13 — Statistics Panel & UI Polish
+## Step 14 — Statistics Panel & UI Polish
 
 You are implementing statistics tracking and UI polish for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -727,7 +813,7 @@ Statistics tab content:
 - Science packs consumed
 - All numbers through `formatNumber(n, COMPACT)`
 
-Per-group lifetime output — add a line to the group detail panel (Step 10b): `"Lifetime output: 48,291 Iron Plates"`. Track per-group in `StatisticsTracker` keyed by group id.
+Per-group lifetime output — add a line to the group detail panel (Step 11b): `"Lifetime output: 48,291 Iron Plates"`. Track per-group in `StatisticsTracker` keyed by group id.
 
 **Empty state pass** — audit every panel. Add one-line centered messages for each:
 - Factory view with no buildings: "No buildings yet. Build your first one →"
@@ -748,7 +834,7 @@ Per-group lifetime output — add a line to the group detail panel (Step 10b): `
 
 ---
 
-## Step 14 — Audio
+## Step 15 — Audio
 
 You are implementing the audio system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -789,7 +875,7 @@ Place all in `assets/sfx/`.
 
 ---
 
-## Step 15 — Import / Export Save
+## Step 16 — Import / Export Save
 
 You are implementing the save import/export feature for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
