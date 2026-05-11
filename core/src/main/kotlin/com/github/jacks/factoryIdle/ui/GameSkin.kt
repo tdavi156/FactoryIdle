@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.TextureAtlas
 import com.badlogic.gdx.scenes.scene2d.ui.Label.LabelStyle
+import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.ui.Skin
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable
@@ -17,10 +18,6 @@ object GameSkin {
     fun initialize() {
         val skin = Skin()
 
-        // Always register placeholders first — atlas regions overwrite them;
-        // anything not yet in the atlas stays as a coloured square so nothing crashes.
-        addPlaceholders(skin)
-
         val atlasFile = Gdx.files.internal("ui/ui_atlas.atlas")
         if (atlasFile.exists()) {
             val atlas = TextureAtlas(atlasFile)
@@ -28,11 +25,14 @@ object GameSkin {
                 it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
             }
             skin.addRegions(atlas)
+        } else {
+            addPlaceholders(skin)
         }
 
         loadFonts(skin)
         addButtonStyles(skin)
         addLabelStyles(skin)
+        skin.add("default", ScrollPane.ScrollPaneStyle())
         Scene2DSkin.defaultSkin = skin
     }
 
@@ -103,6 +103,7 @@ object GameSkin {
         skin.addDrawable(Drawables.ICON_NAVIGATION_RESEARCH(), placeholder("2980b9", 32, 32))
         skin.addDrawable(Drawables.ICON_NAVIGATION_PROGRESS(), placeholder("27ae60", 32, 32))
         skin.addDrawable(Drawables.ICON_NAVIGATION_SETTINGS(), placeholder("7a8090", 32, 32))
+        skin.addDrawable(Drawables.ICON_NAVIGATION_MINING(),   placeholder("8b5e3c", 32, 32))
         // Raw resource icons (small = 32px, medium = 64px, large = 128px)
         skin.addDrawable(Drawables.ICON_RESOURCE_IRON_ORE_SMALL(),      placeholder("8b5e3c", 32,  32))
         skin.addDrawable(Drawables.ICON_RESOURCE_IRON_ORE_MEDIUM(),     placeholder("8b5e3c", 64,  64))
@@ -141,6 +142,7 @@ object GameSkin {
             up                = skin.getDrawable(Drawables.BUTTON_DEFAULT_UP())
             over              = skin.getDrawable(Drawables.BUTTON_DEFAULT_OVER())
             down              = skin.getDrawable(Drawables.BUTTON_DEFAULT_DOWN())
+            checked           = skin.getDrawable(Drawables.BUTTON_DEFAULT_DOWN())
             disabled          = skin.getDrawable(Drawables.BUTTON_DEFAULT_DISABLED())
             font              = bodyFont
             fontColor         = textColor

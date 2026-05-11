@@ -1,9 +1,10 @@
 package com.github.jacks.factoryIdle.ui.views
 
+import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.ui.Image
+import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
 import com.badlogic.gdx.scenes.scene2d.ui.Label
-import com.badlogic.gdx.scenes.scene2d.ui.ProgressBar
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
@@ -12,6 +13,7 @@ import com.github.jacks.factoryIdle.data.Resource
 import com.github.jacks.factoryIdle.data.ResourceCategory
 import com.github.jacks.factoryIdle.ui.Buttons
 import com.github.jacks.factoryIdle.ui.Drawables
+import com.github.jacks.factoryIdle.ui.Fonts
 import com.github.jacks.factoryIdle.ui.Labels
 import com.github.jacks.factoryIdle.ui.models.DisplayMode
 import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
@@ -23,18 +25,12 @@ class ResourceBarView(private val model: ResourceBarModel) : Table() {
     private val skin = Scene2DSkin.defaultSkin
 
     // Mining widget state
-    private val miningTable = Table()
-    private val miningBars  = mutableMapOf<Resource, ProgressBar>()
+    private val miningTable   = Table()
+    private val miningButtons = mutableMapOf<Resource, ImageTextButton>()
 
     // Resource display state
     private val resourceContent = Table()
     private val amountLabels    = mutableMapOf<Resource, Label>()
-
-    // Shared ProgressBar style — built once, reused for all mining bars
-    private val miningBarStyle = ProgressBar.ProgressBarStyle().apply {
-        background  = skin.getDrawable(Drawables.PROGRESS_TRACK())
-        knobBefore  = skin.getDrawable(Drawables.PROGRESS_FILL_GREEN())
-    }
 
     private val toggleButton = TextButton(modeLabel(model.displayMode), skin, Buttons.DEFAULT())
 
@@ -86,29 +82,40 @@ class ResourceBarView(private val model: ResourceBarModel) : Table() {
 
     private fun rebuildMiningButtons() {
         miningTable.clear()
-        miningBars.clear()
+        miningButtons.clear()
 
-        model.unlockedRawResources().forEachIndexed { index, resource ->
-            val slot = Table()
+        val fontColor = Color.valueOf("dde0e8")
+        var col = 0
 
-            val button = TextButton(resource.displayName, skin, Buttons.DEFAULT()).apply {
+        model.unlockedRawResources().forEach { resource ->
+            val style = ImageTextButton.ImageTextButtonStyle().apply {
+                up       = skin.getDrawable(Drawables.BUTTON_DEFAULT_UP())
+                over     = skin.getDrawable(Drawables.BUTTON_DEFAULT_OVER())
+                down     = skin.getDrawable(Drawables.BUTTON_DEFAULT_DOWN())
+                checked  = skin.getDrawable(Drawables.BUTTON_DEFAULT_DOWN())
+                disabled = skin.getDrawable(Drawables.BUTTON_DEFAULT_DISABLED())
+                font     = skin.getFont(Fonts.BODY.skinKey)
+                this.fontColor = fontColor
+                imageUp  = skin.getDrawable(resource.smallIconKey())
+            }
+            val button = ImageTextButton(resource.displayName, style).apply {
                 setProgrammaticChangeEvents(false)
+                isChecked = model.isHandMining(resource)
             }
             button.addListener(object : ChangeListener() {
                 override fun changed(event: ChangeEvent, actor: Actor) {
-                    model.startMining(resource)
-                    button.isChecked = false
+                    model.toggleMining(resource)
                 }
             })
-            slot.add(button).width(MINING_BUTTON_W).height(MINING_BUTTON_H)
-            slot.row()
+            miningButtons[resource] = button
 
-            val bar = ProgressBar(0f, 1f, 0.001f, false, miningBarStyle)
-            miningBars[resource] = bar
-            slot.add(bar).width(MINING_BUTTON_W).height(MINING_BAR_H)
-
-            if (index > 0) miningTable.add(slot).padLeft(4f).fillY()
-            else           miningTable.add(slot).fillY()
+            val padLeft = if (col == 0) 0f else 4f
+            miningTable.add(button).width(MINING_BUTTON_W).height(MINING_BUTTON_H).padLeft(padLeft)
+            col++
+            if (col >= 3) {
+                miningTable.row()
+                col = 0
+            }
         }
     }
 
@@ -157,8 +164,8 @@ class ResourceBarView(private val model: ResourceBarModel) : Table() {
     // --- Per-frame value updates ---
 
     private fun updateValues() {
-        for ((resource, bar) in miningBars) {
-            bar.value = model.handMiningProgress(resource)
+        for ((resource, button) in miningButtons) {
+            button.isChecked = model.isHandMining(resource)
         }
 
         for ((resource, label) in amountLabels) {
@@ -191,9 +198,8 @@ class ResourceBarView(private val model: ResourceBarModel) : Table() {
     }
 
     companion object {
-        private const val MINING_BUTTON_W = 82f
+        private const val MINING_BUTTON_W = 96f
         private const val MINING_BUTTON_H = 28f
-        private const val MINING_BAR_H    = 6f
         private const val ICON_SIZE       = 20f
     }
 }

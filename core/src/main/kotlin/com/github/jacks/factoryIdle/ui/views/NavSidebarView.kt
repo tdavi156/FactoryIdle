@@ -13,6 +13,7 @@ import ktx.scene2d.Scene2DSkin
 
 class NavSidebarView(
     private val navigationModel: NavigationModel,
+    miningView: Table,
     factoryView: Table,
     powerView: Table,
     researchView: Table,
@@ -26,6 +27,7 @@ class NavSidebarView(
         val skin = Scene2DSkin.defaultSkin
 
         val navItems = listOf(
+            Drawables.ICON_NAVIGATION_MINING   to miningView,
             Drawables.ICON_NAVIGATION_FACTORY  to factoryView,
             Drawables.ICON_NAVIGATION_POWER    to powerView,
             Drawables.ICON_NAVIGATION_RESEARCH to researchView,

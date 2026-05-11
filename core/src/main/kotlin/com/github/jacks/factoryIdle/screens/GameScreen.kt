@@ -1,9 +1,14 @@
 package com.github.jacks.factoryIdle.screens
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Stage
+import com.badlogic.gdx.scenes.scene2d.actions.Actions
+import com.badlogic.gdx.scenes.scene2d.ui.Dialog
+import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.Stack
 import com.badlogic.gdx.scenes.scene2d.ui.Table
+import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.github.jacks.factoryIdle.FactoryIdle
 import com.github.jacks.factoryIdle.components.BuildingComponent
@@ -13,9 +18,12 @@ import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.BuildingType
 import com.github.jacks.factoryIdle.data.ConstructionQueue
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
+import com.github.jacks.factoryIdle.data.GroupState
 import com.github.jacks.factoryIdle.data.LifetimeMiningStats
+import com.github.jacks.factoryIdle.data.Recipe
 import com.github.jacks.factoryIdle.data.RecipeRegistry
 import com.github.jacks.factoryIdle.data.Resource
+import com.github.jacks.factoryIdle.data.SaveManager
 import com.github.jacks.factoryIdle.data.UnassignedPool
 import com.github.jacks.factoryIdle.data.UnlockRegistry
 import com.github.jacks.factoryIdle.data.buildPhase1Milestones
@@ -23,10 +31,14 @@ import com.github.jacks.factoryIdle.systems.FuelSystem
 import com.github.jacks.factoryIdle.systems.MilestoneSystem
 import com.github.jacks.factoryIdle.systems.PoolTickSystem
 import com.github.jacks.factoryIdle.systems.ProductionSystem
+import com.github.jacks.factoryIdle.ui.Buttons
+import com.github.jacks.factoryIdle.ui.Labels
 import com.github.jacks.factoryIdle.ui.models.FactoryModel
+import com.github.jacks.factoryIdle.ui.models.MiningModel
 import com.github.jacks.factoryIdle.ui.models.NavigationModel
 import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
 import com.github.jacks.factoryIdle.ui.views.FactoryView
+import com.github.jacks.factoryIdle.ui.views.MiningView
 import com.github.jacks.factoryIdle.ui.views.NavSidebarView
 import com.github.jacks.factoryIdle.ui.views.PowerView
 import com.github.jacks.factoryIdle.ui.views.ProgressView
@@ -37,6 +49,7 @@ import com.github.quillraven.fleks.World
 import com.github.quillraven.fleks.configureWorld
 import ktx.app.KtxScreen
 import ktx.log.logger
+import ktx.scene2d.Scene2DSkin
 import ktx.scene2d.actors
 import ktx.scene2d.table
 
@@ -44,14 +57,14 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
 
     private val stage = Stage(ScreenViewport())
 
-    private val globalResourcePool  = GlobalResourcePool()
-    private val lifetimeMiningStats = LifetimeMiningStats()
-    private val unlockRegistry      = UnlockRegistry()
-    private val unassignedPool      = UnassignedPool()
-    private val recipeRegistry      = RecipeRegistry()
-    private val constructionQueue   = ConstructionQueue()
+    internal val globalResourcePool  = GlobalResourcePool()
+    internal val lifetimeMiningStats = LifetimeMiningStats()
+    internal val unlockRegistry      = UnlockRegistry()
+    internal val unassignedPool      = UnassignedPool()
+    internal val recipeRegistry      = RecipeRegistry()
+    internal val constructionQueue   = ConstructionQueue()
 
-    private val entityWorld: World = configureWorld {
+    internal val entityWorld: World = configureWorld {
         injectables {
             add(globalResourcePool)
             add(lifetimeMiningStats)
@@ -71,17 +84,21 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     private val resourceBarModel = ResourceBarModel(globalResourcePool, lifetimeMiningStats, unlockRegistry)
     private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry, constructionQueue)
     private val resourceBarView  = ResourceBarView(resourceBarModel)
+    private val miningModel      = MiningModel(resourceBarModel)
+    private val miningView       = MiningView(miningModel)
     private val factoryView      = FactoryView(factoryModel)
     private val powerView        = PowerView()
     private val researchView     = ResearchView()
     private val progressView     = ProgressView()
     private val settingsView     = SettingsView()
     private val navSidebarView   = NavSidebarView(
-        navigationModel, factoryView, powerView, researchView, progressView, settingsView
+        navigationModel, miningView, factoryView, powerView, researchView, progressView, settingsView
     )
 
+    private var timeSinceLastSave = 0f
+
     init {
-        navigationModel.register(factoryView, powerView, researchView, progressView, settingsView)
+        navigationModel.register(miningView, factoryView, powerView, researchView, progressView, settingsView)
 
         stage.actors {
             table {
@@ -91,6 +108,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
                 row()
 
                 val contentStack = Stack()
+                contentStack.addActor(miningView)
                 contentStack.addActor(factoryView)
                 contentStack.addActor(powerView)
                 contentStack.addActor(researchView)
@@ -105,7 +123,18 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
             }
         }
 
-        navigationModel.show(factoryView)
+        navigationModel.show(miningView)
+
+        // Attempt to restore a saved game
+        val saveData = SaveManager.load()
+        if (saveData != null) {
+            val gains = SaveManager.computeOfflineGains(saveData)
+            SaveManager.applyLoad(saveData, this)
+            SaveManager.applyOfflineGains(gains, globalResourcePool)
+            if (gains.isNotEmpty()) {
+                showOfflineProgressDialog(saveData.savedAt, gains)
+            }
+        }
     }
 
     override fun show() {
@@ -121,18 +150,83 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
         factoryModel.update(delta)
         stage.act(delta)
         stage.draw()
+
+        timeSinceLastSave += delta
+        if (timeSinceLastSave >= AUTOSAVE_INTERVAL) {
+            timeSinceLastSave = 0f
+            SaveManager.save(this)
+            showSavedIndicator()
+        }
     }
 
-    private fun createBuildingEntity(type: BuildingType) {
+    override fun pause() {
+        SaveManager.save(this)
+    }
+
+    internal fun createBuildingEntity(
+        type: BuildingType,
+        recipe: Recipe? = null,
+        cycleProgress: Float = 0f,
+        fractionalAccumulator: Float = 0f
+    ) {
+        val declaredRates = mutableMapOf<Resource, Float>()
+        declaredRates[Resource.COAL] = COAL_FUEL_RATE
+        if (recipe != null) {
+            for ((resource, amount) in recipe.inputs) {
+                declaredRates[resource] = amount / recipe.duration
+            }
+        }
+
+        val initialState = if (recipe != null) GroupState.RUNNING else GroupState.NO_RECIPE
+
         entityWorld.entity {
             it += BuildingComponent(type)
-            it += ProducerComponent()
+            it += ProducerComponent(recipe = recipe, progress = cycleProgress, groupState = initialState)
             it += FuelConsumerComponent(Resource.COAL, COAL_FUEL_RATE)
             it += ProductionSatisfactionComponent(
-                declaredRates = mutableMapOf(Resource.COAL to COAL_FUEL_RATE)
+                declaredRates         = declaredRates,
+                fractionalAccumulator = fractionalAccumulator
             )
         }
         unassignedPool.add(type, 1)
+    }
+
+    private fun showSavedIndicator() {
+        val skin = Scene2DSkin.defaultSkin
+        val label = Label("Saved", skin, Labels.SMALL())
+        label.color = Color.valueOf("27ae60")
+        label.setPosition(
+            stage.width - label.prefWidth - 12f,
+            12f
+        )
+        label.addAction(
+            Actions.sequence(
+                Actions.delay(2f),
+                Actions.fadeOut(0.5f),
+                Actions.removeActor()
+            )
+        )
+        stage.addActor(label)
+    }
+
+    private fun showOfflineProgressDialog(savedAt: Long, gains: Map<Resource, Float>) {
+        val skin = Scene2DSkin.defaultSkin
+        val duration = SaveManager.formatOfflineDuration(savedAt)
+
+        val dialog = Dialog("While you were away ($duration)", skin)
+        dialog.contentTable.pad(16f)
+
+        val lines = gains.entries
+            .sortedByDescending { it.value }
+            .joinToString("\n") { (resource, amount) ->
+                "+${formatAmount(amount)} ${resource.displayName}"
+            }
+
+        val contentLabel = Label(lines, skin, Labels.BODY())
+        dialog.contentTable.add(contentLabel).left().row()
+
+        dialog.button("OK", true)
+        dialog.show(stage)
     }
 
     override fun dispose() {
@@ -145,6 +239,23 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
         const val NAV_WIDTH = 64f
         // ~2 coal/min per building — tuned from design doc "3 buildings × ~2 coal/min"
         const val COAL_FUEL_RATE = 2f / 60f
+        const val AUTOSAVE_INTERVAL = 60f
         val log = logger<FactoryIdle>()
+
+        private fun formatAmount(amount: Float): String {
+            val whole = amount.toLong()
+            return if (whole >= 1000) {
+                val s = whole.toString()
+                buildString {
+                    val offset = s.length % 3
+                    s.forEachIndexed { i, c ->
+                        if (i > 0 && (i - offset) % 3 == 0) append(',')
+                        append(c)
+                    }
+                }
+            } else {
+                whole.toString()
+            }
+        }
     }
 }

@@ -15,15 +15,25 @@ import com.github.quillraven.fleks.IntervalSystem
 class MilestoneSystem(milestones: List<Milestone>) : IntervalSystem() {
 
     private val pending: MutableList<Milestone> = milestones.toMutableList()
+    private val completed: MutableSet<String> = mutableSetOf()
 
     override fun onTick() {
-        // Iterate a snapshot to allow safe removal while checking
         val snapshot = pending.toList()
         for (milestone in snapshot) {
             if (milestone.condition()) {
                 milestone.reward()
+                completed.add(milestone.id)
                 pending.remove(milestone)
             }
         }
+    }
+
+    fun completedMilestoneIds(): Set<String> = completed
+
+    /** Marks a milestone as already completed without firing its reward — used on save load. */
+    fun markCompleted(id: String) {
+        val milestone = pending.find { it.id == id } ?: return
+        completed.add(id)
+        pending.remove(milestone)
     }
 }

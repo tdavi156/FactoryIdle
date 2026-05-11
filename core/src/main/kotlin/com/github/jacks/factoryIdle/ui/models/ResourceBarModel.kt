@@ -87,6 +87,20 @@ class ResourceBarModel(
         if (resource !in miningProgress) miningProgress[resource] = 0f
     }
 
+    /**
+     * Toggle continuous mining for a resource.
+     * - If already mining this resource: stop it.
+     * - Otherwise: stop any other active mining and start this one.
+     */
+    fun toggleMining(resource: Resource) {
+        if (resource in miningProgress) {
+            miningProgress.remove(resource)
+        } else {
+            miningProgress.clear()
+            miningProgress[resource] = 0f
+        }
+    }
+
     fun toggleDisplayMode() {
         displayMode = if (displayMode == DisplayMode.COUNT) DisplayMode.RATE else DisplayMode.COUNT
         modeListeners.forEach { it(displayMode) }
@@ -111,18 +125,16 @@ class ResourceBarModel(
     }
 
     private fun advanceMining(delta: Float) {
-        val done = mutableListOf<Resource>()
-        for ((resource, progress) in miningProgress) {
-            val next = progress + delta
+        for (resource in miningProgress.keys.toList()) {
+            val next = (miningProgress[resource] ?: 0f) + delta
             if (next >= MINING_CYCLE) {
                 pool.add(resource, 1f)
                 lifetimeStats.add(resource, 1f)
-                done.add(resource)
+                miningProgress[resource] = next - MINING_CYCLE  // carry remainder, keep cycling
             } else {
                 miningProgress[resource] = next
             }
         }
-        done.forEach { miningProgress.remove(it) }
     }
 
     private fun advanceRateSamples(delta: Float) {

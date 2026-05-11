@@ -8,6 +8,13 @@ class GlobalResourcePool {
     fun subtract(resource: Resource, amount: Float) { pool[resource] = maxOf(0f, get(resource) - amount) }
     fun set(resource: Resource, amount: Float) { pool[resource] = amount }
     fun has(resource: Resource, amount: Float): Boolean = get(resource) >= amount
+
+    fun restoreAll(map: Map<Resource, Float>) {
+        pool.clear()
+        pool.putAll(map)
+    }
+
+    fun snapshot(): Map<String, Float> = pool.entries.associate { (k, v) -> k.name to v }
 }
 
 class LifetimeMiningStats {
@@ -15,6 +22,8 @@ class LifetimeMiningStats {
 
     fun add(resource: Resource, amount: Float) { stats[resource] = get(resource) + amount }
     fun get(resource: Resource): Float = stats.getOrDefault(resource, 0f)
+    fun set(resource: Resource, amount: Float) { stats[resource] = amount }
+    fun snapshot(): Map<String, Float> = stats.entries.associate { (k, v) -> k.name to v }
 }
 
 class UnlockRegistry {

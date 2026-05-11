@@ -20,4 +20,9 @@ class ConstructionQueue {
         entry.remainingTime -= delta
         return if (entry.remainingTime <= 0f) { entries.removeFirst(); entry } else null
     }
+
+    /** Restores a saved entry with its original total time and remaining time. Used on load. */
+    fun restore(type: BuildingType, totalTime: Float, remainingTime: Float) {
+        entries.add(ConstructionEntry(type, totalTime, remainingTime))
+    }
 }
