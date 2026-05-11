@@ -17,15 +17,17 @@ object GameSkin {
     fun initialize() {
         val skin = Skin()
 
-        val atlasFile = Gdx.files.internal("ui.atlas")
+        // Always register placeholders first — atlas regions overwrite them;
+        // anything not yet in the atlas stays as a coloured square so nothing crashes.
+        addPlaceholders(skin)
+
+        val atlasFile = Gdx.files.internal("ui/ui_atlas.atlas")
         if (atlasFile.exists()) {
             val atlas = TextureAtlas(atlasFile)
             atlas.textures.forEach {
                 it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
             }
             skin.addRegions(atlas)
-        } else {
-            addPlaceholders(skin)
         }
 
         loadFonts(skin)
