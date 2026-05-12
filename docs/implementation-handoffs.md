@@ -2,7 +2,7 @@
 
 Each section is a self-contained prompt for a new Claude chat. The implementing chat has no memory of prior sessions — every prompt includes full context. Steps must be completed in order unless marked as independent.
 
-Steps 1–8 are complete. Steps 2 Redo and 9–16 are pending.
+Steps 1–9 are complete. Steps 2 Redo and 10–18 are pending.
 
 ---
 
@@ -467,7 +467,374 @@ Replace the current progress-bar buttons with a compact toggle-button grid:
 
 ---
 
-## Step 10 — Research System & Science Packs
+## Step 10 — Resource Panel (FEAT-001 Rework)
+
+You are reworking the resource display panel for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
+
+**Context:** Steps 1–9 are complete. The resource bar is a horizontal strip at the top of the screen. Its LEFT side holds the compact mining widget (Step 9 — DO NOT TOUCH). This step replaces the RIGHT side (the horizontal scrollable resource display) with a richer three-column resource panel.
+
+**What already exists (do not restructure unless specified):**
+
+`ResourceBarModel` — complete, with:
+- `GlobalResourcePool`, `LifetimeMiningStats`, `UnlockRegistry` references
+- `displayMode: DisplayMode` (COUNT / RATE), `toggleDisplayMode()`
+- Rolling 60-second rate window: `getRate(resource): Float` (net change per minute)
+- `visibleResources(): List<Resource>` — unlocked + (has stock or is RAW)
+- `isCategoryCollapsed(category)`, `toggleCategory(category)`
+- `collapsedCategories: MutableSet<ResourceCategory>` player preference
+- Mining state: `isHandMining`, `handMiningProgress`, `toggleMining` — leave entirely untouched
+- Callbacks: `onUpdate`, `onStructureChanged`, `onDisplayModeChanged`, `onCategoryCollapseChanged`
+
+`ResourceBarView` — has:
+- LEFT: compact mining toggle buttons (Step 9) — **DO NOT TOUCH this side or the divider**
+- RIGHT: horizontal ScrollPane containing `resourceContent` Table — **REPLACE this**
+- The display mode toggle button on the far right — **REMOVE**
+
+**Changes to `ResourceBarModel`:**
+
+*Extend `DisplayMode` (same file):*
+```kotlin
+enum class DisplayMode { COUNT_ONLY, RATE_ONLY, COUNT_RATE, COUNT_RATE_TTZ }
+```
+Rename existing COUNT → COUNT_ONLY and RATE → RATE_ONLY. Add two new modes. Change `toggleDisplayMode()` to cycle through all four in order rather than alternating between two. Update `onDisplayModeChanged` callbacks and the mode label helper.
+
+*Add `ProblemLevel` enum (same file or adjacent):*
+```kotlin
+enum class ProblemLevel { HEALTHY, WARN, BAD }
+```
+
+*Add `getProblemLevel(resource: Resource): ProblemLevel` to the model:*
+- BAD: pool amount is 0 while at least one entity has this resource in its `declaredRates`, OR rate < −1.0f/min AND time-to-zero < 60s
+- WARN: rate < −0.05f/min AND time-to-zero between 60–300s, OR pool amount < 10 with active demand
+- HEALTHY: everything else
+- Time-to-zero = `pool.get(resource) / (-getRate(resource) / 60f)` (only when rate is negative)
+
+*Add `ResourceDisplaySettings` data class:*
+```kotlin
+@Serializable
+data class ResourceDisplaySettings(
+    val displayMode: DisplayMode = DisplayMode.COUNT_ONLY,
+    val density: Density = Density.COMFORTABLE,
+    val hiddenResources: MutableSet<String> = mutableSetOf()  // Resource.name strings for serialization
+)
+
+enum class Density { COMFORTABLE, COMPACT }
+```
+On model init: load from `Gdx.files.local("settings.json")` using `kotlinx.serialization`. Save whenever settings change. Use a separate file from `save.json` so it survives save resets.
+
+*Add to the model:*
+- `hideResource(resource: Resource)` — adds to `hiddenResources`, fires `onStructureChanged`
+- `showResource(resource: Resource)` — removes from `hiddenResources`, fires `onStructureChanged`
+- A hidden resource is auto-promoted to visible (overrides the hidden flag) if `getProblemLevel(resource) > HEALTHY`
+
+**Changes to `ResourceBarView` (right-side replacement):**
+
+Replace the horizontal resource display, ScrollPane, and toggle button with three side-by-side column panels: **RAW | PROCESSED | COMPONENT**. A fourth **SCIENCE** column appears once any Science resource is visible (check `visibleResources()`).
+
+*Column structure — each column is a `Table` inside a `ScrollPane`:*
+
+```
+┌──────── RAW ─────────┐  ┌──── PROCESSED ───────┐  ┌──── COMPONENT ───────┐
+│ ▼ Raw        [⚠ 2]  │  │ ▼ Processed          │  │ > Component  [⚠ 1]  │
+│ ● ↑ 🔩 Iron Ore  247│  │ ● — 🔩 Iron Plate 120 │  │                      │
+│ ● ↓ 🪨 Stone     12 │  │ ...                   │  │  (collapsed)         │
+│ ...                  │  │                       │  │                      │
+└──────────────────────┘  └───────────────────────┘  └──────────────────────┘
+```
+
+*Column header row:*
+- Category name: `Labels.SMALL()`
+- Problem badge: count of WARN+BAD resources in this column as a small label. Hidden when zero. Amber text color for WARN-dominated, red for BAD
+- Collapse arrow: "v" (expanded) or ">" (collapsed), calls `model.toggleCategory(category)`. When collapsed, only the header row is shown
+
+*Resource row (per resource, inside the column's scrollable content):*
+- Row height: COMFORTABLE = 28px, COMPACT = 20px — from `ResourceDisplaySettings.density`
+- Problem dot (12×12 image): `STATUS_RUNNING` drawable = HEALTHY, `STATUS_STALLED` (amber) = WARN, `STATUS_PAUSED` (red) = BAD
+- Direction arrow: "↑" (green, `#27ae60`) when `getRate > 0.05f/min`, "↓" (red, `#c0392b`) when `< −0.05f/min`, "—" (dim) otherwise. Use `Labels.SMALL()` with inline markup
+- Small icon: 20×20 image via `resource.smallIconKey()`
+- Resource name: `Labels.BODY()`
+- Stock amount (COUNT_ONLY, COUNT_RATE, COUNT_RATE_TTZ modes): `formatAmount(pool.get(resource))` using `Labels.BODY_BOLD()`. For flow resources (`resource.isFlow == true`): show "~" in dim color instead of a count
+- Rate (RATE_ONLY, COUNT_RATE, COUNT_RATE_TTZ modes): reuse the existing `formatRate()` from `ResourceBarView`. Color markup inline: green positive, red negative, dim neutral
+- Time-to-zero (COUNT_RATE_TTZ mode only): format as `"2m 15s"` (amber when WARN, red when BAD) or `"∞"` in dim when not draining or rate is zero. Use `Labels.DIM()`
+
+*Problem filter toggle:* A small `TextButton` in the top-right corner of the resource panel area (above the three columns). Label: `"⚠ N"` where N = total WARN+BAD resource count across all columns. Hidden when N = 0. When toggled on: only resource rows with ProblemLevel > HEALTHY are shown in all columns. Text turns amber when active.
+
+*Context menu (right-click on a resource row):* Show a tiny popup `Table` with a `TextButton("Hide", Buttons.DEFAULT())`. Clicking calls `model.hideResource(resource)`. A hidden resource disappears from the column unless its problem level rises above HEALTHY (auto-promotion is silent, no animation needed for now).
+
+*Independent column scrolling:* Wrap each column's content in its own `ScrollPane` with `setScrollingDisabled(false, true)`. Size each column's ScrollPane with `expandX().fillX().fillY()` on its Table cell so columns share width equally.
+
+*Display mode cycling:* The old single toggle button is removed. Add a small `TextButton` at the top-right of the overall panel (can live in a mode-header row above the three columns). Cycling order: COUNT_ONLY → RATE_ONLY → COUNT_RATE → COUNT_RATE_TTZ → COUNT_ONLY. Button label shows the current mode name. This replaces the removed toggle button and also writes the new mode to `ResourceDisplaySettings`.
+
+**`Resource` enum — add `isFlow` flag:**
+
+In `data/Enums.kt`, give each `Resource` enum entry an `isFlow: Boolean` parameter defaulting to `false`:
+```kotlin
+enum class Resource(val category: ResourceCategory, val isFlow: Boolean = false) {
+    IRON_ORE(RAW), COAL(RAW), STONE(RAW), COPPER_ORE(RAW),
+    IRON_PLATE(PROCESSED), COPPER_PLATE(PROCESSED),
+    // future: WATER(RAW, isFlow = true), STEAM(PROCESSED, isFlow = true)
+}
+```
+No flow resources exist yet. The panel logic checks `resource.isFlow` and shows "~" in the stock cell when true.
+
+**Resource bar height:**
+
+The constant `RESOURCE_BAR_HEIGHT = 52f` in `GameScreen` is too short for a multi-row column layout with scrollable content. Increase it to **120f** (tune during testing). Update the constant only — the layout will adapt.
+
+**`SettingsView.kt` additions:**
+
+Add a "Resource Panel" section with:
+- Display Mode: a cycling `TextButton` (same cycle as the panel header button) that stays in sync via a shared `ResourceDisplaySettings` state
+- Density: two `TextButton` options (COMFORTABLE / COMPACT)
+
+Both write to `ResourceDisplaySettings` and trigger `onStructureChanged` on the model so the view rebuilds.
+
+**Compile check:** `./gradlew core:compileKotlin` when done. Fix all errors before finishing.
+
+---
+
+## Step 11 — Player Crafting Queue (FEAT-002 Rework)
+
+You are reworking the construction and crafting system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
+
+**Context:** Steps 1–10 are complete. The current `ConstructionQueue` (Step 7) only handles buildings. This step replaces it with a unified `PlayerCraftingQueue` that handles both building construction and intermediate crafting (Iron Gears, Copper Wire, etc.) in a single FIFO queue. Hand mining stays in `ResourceBarModel` unchanged — no player ECS entity is created.
+
+**What already exists (do not touch unless specified):**
+
+- `data/ConstructionQueue.kt` — **DELETE THIS FILE**
+- `ResourceBarModel` — mining stays here, no changes
+- `FactoryView` + `FactoryModel` — Build buttons call `constructionQueue.enqueue(type, duration)` — rewire in this step
+- `RecipeRegistry` — has recipes for intermediates; buildings use a separate cost system (see Step 7)
+- `UnlockRegistry` — controls which building types and resources are visible
+- `UnassignedPool` — completed building construction lands here (consistent with Phase 2 flow)
+- `GameScreen` — has `constructionQueue` as a class-level property — replace with `playerCraftingQueue`
+- `SaveData.kt` — has `constructionQueue: List<ConstructionEntryData>` — update this field
+
+**`data/PlayerCraftingQueue.kt`** — new file replacing `ConstructionQueue.kt`:
+
+```kotlin
+/** What a completed craft produces. */
+sealed class CraftOutput {
+    data class ResourceOutput(val resource: Resource, val amount: Float) : CraftOutput()
+    data class BuildingOutput(val type: BuildingType) : CraftOutput()
+}
+
+data class CraftQueueEntry(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val displayName: String,
+    val iconKey: String,                    // drawable skin key for the icon
+    var remainingTime: Float,
+    val totalTime: Float,                   // original duration for progress bar calculation
+    val consumed: Map<Resource, Float>,     // inputs consumed at enqueue time (for full refund on cancel)
+    val output: CraftOutput
+)
+
+class PlayerCraftingQueue {
+    val entries: MutableList<CraftQueueEntry> = mutableListOf()
+    val active: CraftQueueEntry? get() = entries.firstOrNull()
+
+    /** Consume inputs and enqueue. Returns false if pool cannot satisfy inputs. */
+    fun enqueue(entry: CraftQueueEntry, pool: GlobalResourcePool): Boolean {
+        entry.consumed.forEach { (resource, amount) -> pool.remove(resource, amount) }
+        entries.add(entry)
+        return true
+    }
+
+    /** Cancel active craft and refund consumed inputs. */
+    fun cancelActive(pool: GlobalResourcePool) {
+        val entry = entries.removeFirstOrNull() ?: return
+        entry.consumed.forEach { (resource, amount) -> pool.add(resource, amount) }
+    }
+
+    /** Cancel a queued (non-active) entry at the given index and refund inputs. */
+    fun cancelQueued(index: Int, pool: GlobalResourcePool) {
+        if (index < 1 || index >= entries.size) return     // index 0 = active, use cancelActive
+        val entry = entries.removeAt(index)
+        entry.consumed.forEach { (resource, amount) -> pool.add(resource, amount) }
+    }
+
+    /**
+     * Advance the active entry by delta seconds.
+     * Returns the completed entry if one finishes this frame, null otherwise.
+     */
+    fun advance(delta: Float): CraftQueueEntry? {
+        val entry = active ?: return null
+        entry.remainingTime -= delta
+        return if (entry.remainingTime <= 0f) entries.removeFirst() else null
+    }
+}
+```
+
+**Craft speed:** Use `recipe.duration` unchanged — player crafts at 1.0× Mk1 assembler speed. No fuel or power required for player crafting.
+
+**`GlobalResourcePool` — add `remove` method if not present:**
+
+The pool currently has `get(resource)` and `add(resource, amount)`. Add:
+```kotlin
+fun remove(resource: Resource, amount: Float) {
+    amounts[resource] = maxOf(0f, (amounts[resource] ?: 0f) - amount)
+}
+```
+
+**`GameScreen` updates:**
+
+- Remove `constructionQueue` class-level property; add `playerCraftingQueue: PlayerCraftingQueue = PlayerCraftingQueue()`
+- Add to `injectables { add(playerCraftingQueue) }`
+- In `render()`, replace the old queue advance block with:
+  ```kotlin
+  playerCraftingQueue.advance(delta)?.let { completed ->
+      when (val out = completed.output) {
+          is CraftOutput.BuildingOutput  -> unassignedPool.add(out.type, 1)
+          is CraftOutput.ResourceOutput  -> pool.add(out.resource, out.amount)
+      }
+  }
+  ```
+
+**`ui/models/CraftingModel.kt`** — new file:
+
+Constructed in `GameScreen` with: `PlayerCraftingQueue`, `RecipeRegistry`, `UnlockRegistry`, `GlobalResourcePool`, `ResourceBarModel` (for mining slot display).
+
+```kotlin
+data class RecipeDisplayItem(
+    val recipe: Recipe,
+    val displayName: String,
+    val iconKey: String,
+    val inputSummary: List<Pair<String, Float>>,   // [(iconKey, amount), ...]
+    val outputSummary: List<Pair<String, Float>>,
+    val durationSeconds: Float,
+    val canAfford: Boolean
+    // isLocked resources are excluded entirely from the list
+)
+```
+
+Exposes:
+- `getBuildingRecipes(): List<RecipeDisplayItem>` — unlocked building types (include cost as inputs, `BuildingOutput` as output, `isUnlocked` check)
+- `getIntermediateRecipes(): List<RecipeDisplayItem>` — unlocked intermediate/component recipes
+- `enqueue(item: RecipeDisplayItem)` — validates pool, builds `CraftQueueEntry`, calls `playerCraftingQueue.enqueue(entry, pool)`
+- `activeEntry(): CraftQueueEntry?` and `queuedEntries(): List<CraftQueueEntry>`
+- `cancelActive()` and `cancelQueued(index: Int)` — delegate to queue
+- `onQueueChanged(listener: () -> Unit)` and `onUpdate(listener: () -> Unit)`
+
+**`ui/views/CraftingView.kt`** — new file, full nav tab:
+
+A `Table` subclass replacing the `CraftView` stub (if one exists) or created fresh.
+
+Layout:
+```
+┌────────────────────────────────────────┐
+│  Craft  (Labels.HEADING)               │
+├────────────────────────────────────────┤
+│  Production Facilities                 │  ← section header (Labels.BODY_BOLD)
+│  [recipe row] [recipe row] ...         │  ← scrollable
+├────────────────────────────────────────┤
+│  Intermediates                         │
+│  [recipe row] [recipe row] ...         │  ← scrollable
+└────────────────────────────────────────┘
+```
+
+Recipe row (each a Table):
+- Icon: 32×32 image via `item.iconKey`
+- Name: `Labels.BODY()`
+- Inputs: small horizontal row of `[icon + amount]` pairs (20×20 icons, `Labels.SMALL()`)
+- Output: small `[icon + amount]`
+- Duration: `Labels.SMALL()` e.g. `"5.0s"`
+- Craft button: `Buttons.ACCENT()` style, label "Craft"
+  - Disabled + grey text when `!canAfford`, with a tooltip message like `"Need: 2 Iron Plate"`
+  - Hidden (not just disabled) when resource or building is not yet unlocked
+  - Always enabled when affordable — player can queue as many as desired
+  - On click: `model.enqueue(item)`, then let `onQueueChanged` drive UI refresh
+
+Wrap each section's rows in its own `ScrollPane`.
+
+Subscribe to `model.onQueueChanged { rebuildRecipeRows() }` to refresh affordability indicators in real time.
+
+**`ui/views/QueueWidget.kt`** — new file, persistent HUD overlay:
+
+A `Table` subclass added **directly to the Stage root** in `GameScreen` (not inside any nav content area) so it appears on every tab. Position: bottom-right corner of the stage. Use `setPosition()` and `setSize()` from within the stage's `act()` or call `pack()` and position after building.
+
+Background: `PANEL_BG` nine-patch drawable.
+
+Layout states:
+
+*Empty queue (no active or queued crafts):*
+- One compact row: `[resource icon] Mining: [resource name]` drawn from `ResourceBarModel.unlockedRawResources()` and `isHandMining()`, or `"Mining: idle"` if none active
+- Widget height ≈ 32px
+
+*Active craft:*
+- Row 1 (mining slot): same mining indicator as above
+- Row 2 (active item): 32×32 icon + name label + progress bar (full widget width, 8px tall) + countdown label `"4.2s"` right-aligned
+  - Progress fill = `(1f − active.remainingTime / active.totalTime) × barWidth`
+  - Progress fill drawable: `PROGRESS_FILL_GREEN`
+  - Track drawable: `PROGRESS_TRACK`
+- Rows 3–7 (queued items, up to 5 shown): 24×24 icon + name + `×` cancel button (`Buttons.DEFAULT()`) right-aligned
+  - Cancel calls `model.cancelQueued(index)` where index = 1-based position in `entries`
+- If more than 5 items in queue: show `"+ N more"` in `Labels.DIM()` at the bottom
+
+Width: 220px fixed. Height: dynamic based on queue length. Subscribe to `model.onUpdate { updateProgress() }` every frame for the progress bar. Subscribe to `model.onQueueChanged { rebuild() }` for structural changes.
+
+**Wire Build buttons in `FactoryView` / `FactoryModel`:**
+
+Where `FactoryModel` or `FactoryView` currently calls `constructionQueue.enqueue(type, duration)`:
+1. Look up the building cost from a `buildingCosts: Map<BuildingType, Map<Resource, Float>>` — this was previously hardcoded in Step 7; move it to a companion object in `PlayerCraftingQueue` or `FactoryModel`
+2. Build a `CraftQueueEntry` with `BuildingOutput(type)`, `consumed = cost`, `totalTime/remainingTime` from the construction time constants
+3. Call `craftingModel.enqueue(item)` (after affordability check already performed by the view)
+
+Construction times remain unchanged from Step 7: Stone Furnace = 5s, Basic Miner = 8s.
+
+**`NavSidebarView.kt` — add Craft nav button:**
+
+Add `ICON_NAVIGATION_CRAFT` to `Drawables` enum (after `ICON_NAVIGATION_MINING`) and a placeholder in `GameSkin.addPlaceholders()`:
+```kotlin
+// Drawables.kt — in the Navigation icons enum entries:
+ICON_NAVIGATION_CRAFT,
+
+// GameSkin.kt — in addPlaceholders(), Navigation icons block:
+skin.addDrawable(Drawables.ICON_NAVIGATION_CRAFT(), placeholder("27ae60", 32, 32))
+```
+
+Add the Craft nav button to `NavSidebarView` as the second button (after Mining, before Factory). Wire to `navigationModel.show(craftingView)`. The asset `icon_navigation_craft.png` must be created by the user and packed into the atlas — the placeholder renders until then.
+
+**`SaveData.kt` — update queue field:**
+
+```kotlin
+// Remove:
+val constructionQueue: List<ConstructionEntryData>
+
+// Add:
+val craftingQueue: List<CraftQueueEntryData> = emptyList()
+
+@Serializable
+data class CraftQueueEntryData(
+    val displayName: String,
+    val iconKey: String,
+    val remainingTime: Float,
+    val totalTime: Float,
+    val consumed: Map<String, Float>,   // Resource.name → amount
+    val outputType: String,             // "RESOURCE" or "BUILDING"
+    val outputKey: String               // Resource.name or BuildingType.name
+)
+```
+
+Update `SaveManager.save()` and `applyLoad()` accordingly.
+
+**`GameScreen` — register `CraftingView` and `QueueWidget`:**
+
+```kotlin
+// Class-level properties:
+val craftingModel = CraftingModel(playerCraftingQueue, recipeRegistry, unlockRegistry, pool, resourceBarModel)
+val craftingView  = CraftingView(craftingModel)
+val queueWidget   = QueueWidget(craftingModel, resourceBarModel)
+
+// In the stage setup (after all nav views are added):
+navigationModel.register(craftingView)
+stage.addActor(queueWidget)       // added directly to stage root, not to nav content
+```
+
+**Compile check:** `./gradlew core:compileKotlin` when done. Fix all errors before finishing.
+
+---
+
+## Step 12 — Research System & Science Packs
 
 You are implementing the research system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -540,7 +907,7 @@ Add `ResearchManager` to `GameScreen` as a class-level injectable.
 
 ---
 
-## Step 11a — Phase 2: Building Groups (ECS & Data)
+## Step 13a — Phase 2: Building Groups (ECS & Data)
 
 You are implementing the building group system (data/ECS layer) for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -550,7 +917,7 @@ You are implementing the building group system (data/ECS layer) for an idle fact
 - Individual building entities with `ProducerComponent`/`FuelConsumerComponent`/`ProductionSatisfactionComponent`. All building types (including miners) use `ProducerComponent`.
 - `BuildingGroupComponent` exists but is Phase 2 aware only
 - `UnlockRegistry` manages unlocked building types
-- Research system (Step 10) — the unlock trigger for groups is a research reward
+- Research system (Step 12) — the unlock trigger for groups is a research reward
 
 **Group unlock transition:**
 When the "Group Management I" research completes (Orange Science tier), fire a one-time transition:
@@ -595,7 +962,7 @@ A group of N buildings produces N items per cycle at full satisfaction. The accu
 
 **Group creation (for new buildings in Phase 2):**
 - New buildings from construction go to `UnassignedPool` (not directly into a group)
-- Player creates a group via the factory view UI (Step 10b); the group entity is created then
+- Player creates a group via the factory view UI (Step 13b); the group entity is created then
 - A group with `count = 0` is valid — it's a named placeholder ready for buildings
 
 **`PoolTickSystem` updates:**
@@ -609,12 +976,12 @@ No structural change required. Groups already have `BuildingGroup` component for
 
 ---
 
-## Step 11b — Phase 2: Group UI
+## Step 13b — Phase 2: Group UI
 
 You are implementing the building group UI for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules, Scene2D pitfalls, and the workflow rule you must follow.
 
 **What already exists:**
-- Phase 2 ECS layer from Step 11a: `BuildingGroup`, `UnassignedPool`, group transition logic
+- Phase 2 ECS layer from Step 13a: `BuildingGroup`, `UnassignedPool`, group transition logic
 - Factory view from Step 6 (individual building cards) — replace with group card grid in Phase 2
 - Full skin with `CARD_BG_*`, `ICON_BLD_*`, `ICON_RSC_*`, `STATUS_*` drawables, `BUTTON_NAVIGATION_SELECTED`, etc.
 
@@ -671,7 +1038,7 @@ Cycles through `LOWEST → LOW → NORMAL → HIGH → HIGHEST`. Never shows num
 
 ---
 
-## Step 12 — Bottleneck Inspector & Net Rate Display
+## Step 14 — Bottleneck Inspector & Net Rate Display
 
 You are implementing factory health diagnostics for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -717,7 +1084,7 @@ Results rendered as a scrollable flagged list. Each entry: warning icon + descri
 
 ---
 
-## Step 13 — Nudge System & Tutorial
+## Step 15 — Nudge System & Tutorial
 
 You are implementing the in-game nudge and tutorial system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -782,7 +1149,7 @@ L1 = visual pulse animation on the relevant UI element. L2 = one-line status tex
 
 ---
 
-## Step 14 — Statistics Panel & UI Polish
+## Step 16 — Statistics Panel & UI Polish
 
 You are implementing statistics tracking and UI polish for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -813,7 +1180,7 @@ Statistics tab content:
 - Science packs consumed
 - All numbers through `formatNumber(n, COMPACT)`
 
-Per-group lifetime output — add a line to the group detail panel (Step 11b): `"Lifetime output: 48,291 Iron Plates"`. Track per-group in `StatisticsTracker` keyed by group id.
+Per-group lifetime output — add a line to the group detail panel (Step 13b): `"Lifetime output: 48,291 Iron Plates"`. Track per-group in `StatisticsTracker` keyed by group id.
 
 **Empty state pass** — audit every panel. Add one-line centered messages for each:
 - Factory view with no buildings: "No buildings yet. Build your first one →"
@@ -834,7 +1201,7 @@ Per-group lifetime output — add a line to the group detail panel (Step 11b): `
 
 ---
 
-## Step 15 — Audio
+## Step 17 — Audio
 
 You are implementing the audio system for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
@@ -875,7 +1242,7 @@ Place all in `assets/sfx/`.
 
 ---
 
-## Step 16 — Import / Export Save
+## Step 18 — Import / Export Save
 
 You are implementing the save import/export feature for an idle factory game called FactoryIdle. The game is built with LibGDX + LibKTX + Fleks 2.x ECS in Kotlin. Read `CLAUDE.md` first — it contains architecture rules and the workflow rule you must follow.
 
