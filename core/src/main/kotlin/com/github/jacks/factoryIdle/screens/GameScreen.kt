@@ -16,10 +16,11 @@ import com.github.jacks.factoryIdle.components.FuelConsumerComponent
 import com.github.jacks.factoryIdle.components.ProducerComponent
 import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.BuildingType
-import com.github.jacks.factoryIdle.data.ConstructionQueue
+import com.github.jacks.factoryIdle.data.CraftOutput
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.GroupState
 import com.github.jacks.factoryIdle.data.LifetimeMiningStats
+import com.github.jacks.factoryIdle.data.PlayerCraftingQueue
 import com.github.jacks.factoryIdle.data.Recipe
 import com.github.jacks.factoryIdle.data.RecipeRegistry
 import com.github.jacks.factoryIdle.data.Resource
@@ -33,15 +34,18 @@ import com.github.jacks.factoryIdle.systems.PoolTickSystem
 import com.github.jacks.factoryIdle.systems.ProductionSystem
 import com.github.jacks.factoryIdle.ui.Buttons
 import com.github.jacks.factoryIdle.ui.Labels
+import com.github.jacks.factoryIdle.ui.models.CraftingModel
 import com.github.jacks.factoryIdle.ui.models.FactoryModel
 import com.github.jacks.factoryIdle.ui.models.MiningModel
 import com.github.jacks.factoryIdle.ui.models.NavigationModel
 import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
+import com.github.jacks.factoryIdle.ui.views.CraftingView
 import com.github.jacks.factoryIdle.ui.views.FactoryView
 import com.github.jacks.factoryIdle.ui.views.MiningView
 import com.github.jacks.factoryIdle.ui.views.NavSidebarView
 import com.github.jacks.factoryIdle.ui.views.PowerView
 import com.github.jacks.factoryIdle.ui.views.ProgressView
+import com.github.jacks.factoryIdle.ui.views.QueueWidget
 import com.github.jacks.factoryIdle.ui.views.ResearchView
 import com.github.jacks.factoryIdle.ui.views.ResourceBarView
 import com.github.jacks.factoryIdle.ui.views.SettingsView
@@ -62,7 +66,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     internal val unlockRegistry      = UnlockRegistry()
     internal val unassignedPool      = UnassignedPool()
     internal val recipeRegistry      = RecipeRegistry()
-    internal val constructionQueue   = ConstructionQueue()
+    internal val playerCraftingQueue = PlayerCraftingQueue()
 
     internal val entityWorld: World = configureWorld {
         injectables {
@@ -70,7 +74,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
             add(lifetimeMiningStats)
             add(unlockRegistry)
             add(recipeRegistry)
-            add(constructionQueue)
+            add(playerCraftingQueue)
         }
         systems {
             add(PoolTickSystem())
@@ -97,23 +101,26 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
             found
         }
     )
-    private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry, constructionQueue)
+    private val craftingModel    = CraftingModel(playerCraftingQueue, recipeRegistry, unlockRegistry, globalResourcePool, resourceBarModel)
+    private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry, craftingModel)
     private val resourceBarView  = ResourceBarView(resourceBarModel)
     private val miningModel      = MiningModel(resourceBarModel)
     private val miningView       = MiningView(miningModel)
+    private val craftingView     = CraftingView(craftingModel)
     private val factoryView      = FactoryView(factoryModel)
     private val powerView        = PowerView()
     private val researchView     = ResearchView()
     private val progressView     = ProgressView()
     private val settingsView     = SettingsView(resourceBarModel)
+    private val queueWidget      = QueueWidget(craftingModel, resourceBarModel)
     private val navSidebarView   = NavSidebarView(
-        navigationModel, miningView, factoryView, powerView, researchView, progressView, settingsView
+        navigationModel, miningView, craftingView, factoryView, powerView, researchView, progressView, settingsView
     )
 
     private var timeSinceLastSave = 0f
 
     init {
-        navigationModel.register(miningView, factoryView, powerView, researchView, progressView, settingsView)
+        navigationModel.register(miningView, craftingView, factoryView, powerView, researchView, progressView, settingsView)
 
         stage.actors {
             table {
@@ -124,6 +131,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
 
                 val contentStack = Stack()
                 contentStack.addActor(miningView)
+                contentStack.addActor(craftingView)
                 contentStack.addActor(factoryView)
                 contentStack.addActor(powerView)
                 contentStack.addActor(researchView)
@@ -137,6 +145,8 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
                 add(innerTable).expand().fill()
             }
         }
+
+        stage.addActor(queueWidget)
 
         navigationModel.show(miningView)
 
@@ -157,11 +167,15 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     }
 
     override fun render(delta: Float) {
-        constructionQueue.advance(delta)?.let { completed ->
-            createBuildingEntity(completed.type)
+        playerCraftingQueue.advance(delta)?.let { completed ->
+            when (val out = completed.output) {
+                is CraftOutput.BuildingOutput  -> createBuildingEntity(out.type)
+                is CraftOutput.ResourceOutput  -> globalResourcePool.add(out.resource, out.amount)
+            }
         }
         entityWorld.update(delta)
         resourceBarModel.update(delta)
+        craftingModel.update()
         factoryModel.update(delta)
         stage.act(delta)
         stage.draw()

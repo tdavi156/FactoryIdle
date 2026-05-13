@@ -117,7 +117,7 @@ class FactoryView(private val model: FactoryModel) : Table() {
     private fun queueRow(qe: QueueDisplayEntry): Table {
         val row = Table()
 
-        val icon = Image(skin.getDrawable(qe.type.smallIconKey()))
+        val icon = Image(skin.getDrawable(qe.iconKey))
         row.add(icon).size(24f).padRight(6f).top()
 
         val infoCol = Table()

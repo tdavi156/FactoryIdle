@@ -104,6 +104,7 @@ object GameSkin {
         skin.addDrawable(Drawables.ICON_NAVIGATION_PROGRESS(), placeholder("27ae60", 32, 32))
         skin.addDrawable(Drawables.ICON_NAVIGATION_SETTINGS(), placeholder("7a8090", 32, 32))
         skin.addDrawable(Drawables.ICON_NAVIGATION_MINING(),   placeholder("8b5e3c", 32, 32))
+        skin.addDrawable(Drawables.ICON_NAVIGATION_CRAFT(),    placeholder("27ae60", 32, 32))
         // Raw resource icons (small = 32px, medium = 64px, large = 128px)
         skin.addDrawable(Drawables.ICON_RESOURCE_IRON_ORE_SMALL(),      placeholder("8b5e3c", 32,  32))
         skin.addDrawable(Drawables.ICON_RESOURCE_IRON_ORE_MEDIUM(),     placeholder("8b5e3c", 64,  64))

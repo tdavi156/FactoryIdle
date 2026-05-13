@@ -41,7 +41,7 @@ object SaveManager {
         restoreLifetimeStats(data, screen)
         restoreUnlocks(data, screen)
         restoreEntities(data, screen)
-        restoreConstructionQueue(data, screen)
+        restoreCraftingQueue(data, screen)
         restoreMilestones(data, screen)
     }
 
@@ -59,7 +59,6 @@ object SaveManager {
             val type = buildingTypeOrNull(entry.type) ?: continue
             val recipeId = entry.assignedRecipe ?: continue
 
-            // Reconstruct recipe from registry to get rates
             val recipes = RecipeRegistry().recipesFor(type)
             val recipe = recipes.find { it.outputs.keys.firstOrNull()?.name == recipeId } ?: continue
 
@@ -114,33 +113,43 @@ object SaveManager {
 
                 placedBuildings.add(
                     PlacedBuildingSaveData(
-                        type                 = building.type.name,
-                        assignedRecipe       = recipeId,
-                        cycleProgress        = producer?.progress ?: 0f,
+                        type                  = building.type.name,
+                        assignedRecipe        = recipeId,
+                        cycleProgress         = producer?.progress ?: 0f,
                         fractionalAccumulator = sat?.fractionalAccumulator ?: 0f,
-                        paused               = false
+                        paused                = false
                     )
                 )
             }
         }
 
-        val queueEntries = screen.constructionQueue.entries.map { entry ->
-            ConstructionEntrySaveData(
-                type          = entry.type.name,
-                remainingTime = entry.remainingTime
+        val craftingQueue = screen.playerCraftingQueue.entries.map { entry ->
+            val (outputType, outputKey, outputAmount) = when (val out = entry.output) {
+                is CraftOutput.BuildingOutput  -> Triple("BUILDING", out.type.name, 1f)
+                is CraftOutput.ResourceOutput -> Triple("RESOURCE", out.resource.name, out.amount)
+            }
+            CraftQueueEntryData(
+                displayName   = entry.displayName,
+                iconKey       = entry.iconKey,
+                remainingTime = entry.remainingTime,
+                totalTime     = entry.totalTime,
+                consumed      = entry.consumed.entries.associate { (k, v) -> k.name to v },
+                outputType    = outputType,
+                outputKey     = outputKey,
+                outputAmount  = outputAmount
             )
         }
 
         return SaveData(
-            version              = 1,
-            savedAt              = System.currentTimeMillis(),
-            globalPool           = screen.globalResourcePool.snapshot(),
-            lifetimeStats        = screen.lifetimeMiningStats.snapshot(),
-            unlockedBuildings    = screen.unlockRegistry.unlockedBuildingTypes().map { it.name },
-            unlockedResources    = screen.unlockRegistry.unlockedResources().map { it.name },
-            placedBuildings      = placedBuildings,
-            constructionQueue    = queueEntries,
-            completedMilestones  = milestoneSystem.completedMilestoneIds()
+            version             = 1,
+            savedAt             = System.currentTimeMillis(),
+            globalPool          = screen.globalResourcePool.snapshot(),
+            lifetimeStats       = screen.lifetimeMiningStats.snapshot(),
+            unlockedBuildings   = screen.unlockRegistry.unlockedBuildingTypes().map { it.name },
+            unlockedResources   = screen.unlockRegistry.unlockedResources().map { it.name },
+            placedBuildings     = placedBuildings,
+            craftingQueue       = craftingQueue,
+            completedMilestones = milestoneSystem.completedMilestoneIds()
         )
     }
 
@@ -185,11 +194,32 @@ object SaveManager {
         }
     }
 
-    private fun restoreConstructionQueue(data: SaveData, screen: GameScreen) {
-        for (entry in data.constructionQueue) {
-            val type = buildingTypeOrNull(entry.type) ?: continue
-            val totalTime = screen.recipeRegistry.constructionTimeFor(type)
-            screen.constructionQueue.restore(type, totalTime, entry.remainingTime)
+    private fun restoreCraftingQueue(data: SaveData, screen: GameScreen) {
+        for (entryData in data.craftingQueue) {
+            val output = when (entryData.outputType) {
+                "BUILDING" -> {
+                    val type = buildingTypeOrNull(entryData.outputKey) ?: continue
+                    CraftOutput.BuildingOutput(type)
+                }
+                "RESOURCE" -> {
+                    val resource = resourceOrNull(entryData.outputKey) ?: continue
+                    CraftOutput.ResourceOutput(resource, entryData.outputAmount)
+                }
+                else -> continue
+            }
+            val consumed = entryData.consumed.mapNotNull { (key, amount) ->
+                resourceOrNull(key)?.let { it to amount }
+            }.toMap()
+            val entry = CraftQueueEntry(
+                displayName   = entryData.displayName,
+                iconKey       = entryData.iconKey,
+                remainingTime = entryData.remainingTime,
+                totalTime     = entryData.totalTime,
+                consumed      = consumed,
+                output        = output
+            )
+            // Restore without re-deducting resources (already deducted before save)
+            screen.playerCraftingQueue.entries.add(entry)
         }
     }
 

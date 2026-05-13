@@ -6,6 +6,7 @@ class GlobalResourcePool {
     fun get(resource: Resource): Float = pool.getOrDefault(resource, 0f)
     fun add(resource: Resource, amount: Float) { pool[resource] = get(resource) + amount }
     fun subtract(resource: Resource, amount: Float) { pool[resource] = maxOf(0f, get(resource) - amount) }
+    fun remove(resource: Resource, amount: Float) { pool[resource] = maxOf(0f, get(resource) - amount) }
     fun set(resource: Resource, amount: Float) { pool[resource] = amount }
     fun has(resource: Resource, amount: Float): Boolean = get(resource) >= amount
 

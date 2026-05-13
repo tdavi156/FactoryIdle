@@ -6,7 +6,8 @@ import com.github.jacks.factoryIdle.components.FuelConsumerComponent
 import com.github.jacks.factoryIdle.components.ProducerComponent
 import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
 import com.github.jacks.factoryIdle.data.BuildingType
-import com.github.jacks.factoryIdle.data.ConstructionQueue
+import com.github.jacks.factoryIdle.data.CraftOutput
+import com.github.jacks.factoryIdle.data.CraftQueueEntry
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
 import com.github.jacks.factoryIdle.data.GroupState
 import com.github.jacks.factoryIdle.data.Recipe
@@ -14,6 +15,7 @@ import com.github.jacks.factoryIdle.data.RecipeRegistry
 import com.github.jacks.factoryIdle.data.Resource
 import com.github.jacks.factoryIdle.data.UnassignedPool
 import com.github.jacks.factoryIdle.data.UnlockRegistry
+import com.github.jacks.factoryIdle.ui.smallIconKey
 import com.github.quillraven.fleks.Entity
 import com.github.quillraven.fleks.World
 
@@ -38,6 +40,7 @@ data class PlacedBuildingData(
 
 data class QueueDisplayEntry(
     val type: BuildingType,
+    val iconKey: String,
     val progress: Float,
     val remainingTime: Float
 )
@@ -48,7 +51,7 @@ class FactoryModel(
     private val unlockRegistry: UnlockRegistry,
     private val unassignedPool: UnassignedPool,
     private val recipeRegistry: RecipeRegistry,
-    private val constructionQueue: ConstructionQueue
+    private val craftingModel: CraftingModel
 ) {
     private val buildingFamily = world.family { all(BuildingComponent) }
 
@@ -87,10 +90,17 @@ class FactoryModel(
 
     fun buildBuilding(entry: BuildMenuEntry) {
         if (!entry.canAfford) return
-        for ((resource, qty) in entry.cost) {
-            pool.subtract(resource, qty.toFloat())
-        }
-        constructionQueue.enqueue(entry.type, recipeRegistry.constructionTimeFor(entry.type))
+        val cost     = entry.cost.mapValues { (_, qty) -> qty.toFloat() }
+        val duration = recipeRegistry.constructionTimeFor(entry.type)
+        val craftEntry = CraftQueueEntry(
+            displayName   = entry.type.displayName,
+            iconKey       = entry.type.smallIconKey(),
+            remainingTime = duration,
+            totalTime     = duration,
+            consumed      = cost,
+            output        = CraftOutput.BuildingOutput(entry.type)
+        )
+        craftingModel.enqueue(craftEntry)
         changeListeners.forEach { it() }
     }
 
@@ -105,7 +115,6 @@ class FactoryModel(
             sat.declaredRates.clear()
             sat.fractionalAccumulator = 0f
 
-            // Re-seed fuel rate so it is not lost on recipe change
             entity.getOrNull(FuelConsumerComponent)?.let { fuel ->
                 sat.declaredRates[fuel.fuelType] = fuel.consumeRate
             }
@@ -174,11 +183,15 @@ class FactoryModel(
     }
 
     private fun buildQueueEntries(): List<QueueDisplayEntry> =
-        constructionQueue.entries.map { entry ->
-            QueueDisplayEntry(
-                type          = entry.type,
-                progress      = 1f - (entry.remainingTime / entry.totalTime).coerceIn(0f, 1f),
-                remainingTime = entry.remainingTime.coerceAtLeast(0f)
-            )
-        }
+        craftingModel.playerCraftingQueue.entries
+            .filter { it.output is CraftOutput.BuildingOutput }
+            .map { entry ->
+                val type = (entry.output as CraftOutput.BuildingOutput).type
+                QueueDisplayEntry(
+                    type          = type,
+                    iconKey       = entry.iconKey,
+                    progress      = 1f - (entry.remainingTime / entry.totalTime).coerceIn(0f, 1f),
+                    remainingTime = entry.remainingTime.coerceAtLeast(0f)
+                )
+            }
 }
