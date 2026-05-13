@@ -81,7 +81,22 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     }
 
     private val navigationModel  = NavigationModel()
-    private val resourceBarModel = ResourceBarModel(globalResourcePool, lifetimeMiningStats, unlockRegistry)
+    private val resourceBarModel = ResourceBarModel(
+        pool             = globalResourcePool,
+        lifetimeStats    = lifetimeMiningStats,
+        unlockRegistry   = unlockRegistry,
+        hasActiveDemand  = { resource ->
+            var found = false
+            with(entityWorld) {
+                family { all(ProductionSatisfactionComponent) }.forEach { entity ->
+                    if (!found && entity[ProductionSatisfactionComponent].declaredRates.containsKey(resource)) {
+                        found = true
+                    }
+                }
+            }
+            found
+        }
+    )
     private val factoryModel     = FactoryModel(entityWorld, globalResourcePool, unlockRegistry, unassignedPool, recipeRegistry, constructionQueue)
     private val resourceBarView  = ResourceBarView(resourceBarModel)
     private val miningModel      = MiningModel(resourceBarModel)
@@ -90,7 +105,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     private val powerView        = PowerView()
     private val researchView     = ResearchView()
     private val progressView     = ProgressView()
-    private val settingsView     = SettingsView()
+    private val settingsView     = SettingsView(resourceBarModel)
     private val navSidebarView   = NavSidebarView(
         navigationModel, miningView, factoryView, powerView, researchView, progressView, settingsView
     )
@@ -235,7 +250,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     }
 
     companion object {
-        const val RESOURCE_BAR_HEIGHT = 52f
+        const val RESOURCE_BAR_HEIGHT = 120f
         const val NAV_WIDTH = 64f
         // ~2 coal/min per building — tuned from design doc "3 buildings × ~2 coal/min"
         const val COAL_FUEL_RATE = 2f / 60f

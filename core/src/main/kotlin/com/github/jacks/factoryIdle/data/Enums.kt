@@ -4,7 +4,7 @@ enum class ResourceCategory(val displayName: String) {
     RAW("Raw"), PROCESSED("Processed"), COMPONENT("Component"), SCIENCE("Science")
 }
 
-enum class Resource(val category: ResourceCategory, val displayName: String) {
+enum class Resource(val category: ResourceCategory, val displayName: String, val isFlow: Boolean = false) {
     IRON_ORE    (ResourceCategory.RAW,       "Iron Ore"),
     COAL        (ResourceCategory.RAW,       "Coal"),
     STONE       (ResourceCategory.RAW,       "Stone"),
