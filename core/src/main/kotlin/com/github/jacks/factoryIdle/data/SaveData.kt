@@ -12,7 +12,10 @@ data class SaveData(
     val unlockedResources: List<String>,
     val placedBuildings: List<PlacedBuildingSaveData>,
     val craftingQueue: List<CraftQueueEntryData> = emptyList(),
-    val completedMilestones: Set<String>
+    val completedMilestones: Set<String>,
+    val activeResearch: String? = null,
+    val researchProgress: Float = 0f,
+    val completedResearch: Set<String> = emptySet()
 )
 
 @Serializable

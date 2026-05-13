@@ -138,7 +138,10 @@ class FactoryModel(
     fun selectedEntityData(): PlacedBuildingData? =
         selectedEntity?.let { sel -> _placedBuildings.firstOrNull { it.entity == sel } }
 
-    fun recipesFor(type: BuildingType): List<Recipe> = recipeRegistry.recipesFor(type)
+    fun recipesFor(type: BuildingType): List<Recipe> =
+        recipeRegistry.recipesFor(type).filter { recipe ->
+            recipe.inputs.all { (resource, _) -> unlockRegistry.isUnlocked(resource) }
+        }
 
     private fun buildBuildMenu(): List<BuildMenuEntry> =
         unlockRegistry.unlockedBuildingTypes().map { type ->

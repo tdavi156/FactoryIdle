@@ -60,16 +60,24 @@ class CraftingModel(
             )
         }
 
-    fun getIntermediateRecipes(): List<RecipeDisplayItem> {
-        val result = mutableListOf<RecipeDisplayItem>()
-        for (resource in Resource.values()) {
-            if (resource.category != ResourceCategory.COMPONENT) continue
-            if (!unlockRegistry.isUnlocked(resource)) continue
-            // Intermediate recipes are keyed by a pseudo building type; skip for now
-            // (no COMPONENT resources exist in Phase 1)
-        }
-        return result
-    }
+    fun getIntermediateRecipes(): List<RecipeDisplayItem> =
+        recipeRegistry.handCraftableRecipes()
+            .filter { recipe -> recipe.outputs.keys.all { unlockRegistry.isUnlocked(it) } }
+            .map { recipe ->
+                val outputResource = recipe.outputs.keys.first()
+                val outputAmount   = recipe.outputs.values.first()
+                val canAfford      = recipe.inputs.all { (res, qty) -> pool.has(res, qty) }
+                RecipeDisplayItem(
+                    recipe          = recipe,
+                    displayName     = outputResource.displayName,
+                    iconKey         = outputResource.smallIconKey(),
+                    inputSummary    = recipe.inputs.map { (res, qty) -> res.smallIconKey() to qty },
+                    outputSummary   = listOf(outputResource.smallIconKey() to outputAmount),
+                    durationSeconds = recipe.duration,
+                    canAfford       = canAfford,
+                    craftOutput     = CraftOutput.ResourceOutput(outputResource, outputAmount)
+                )
+            }
 
     // ── Enqueue ───────────────────────────────────────────────────────────────
 

@@ -15,6 +15,7 @@ import com.github.jacks.factoryIdle.components.BuildingComponent
 import com.github.jacks.factoryIdle.components.FuelConsumerComponent
 import com.github.jacks.factoryIdle.components.ProducerComponent
 import com.github.jacks.factoryIdle.components.ProductionSatisfactionComponent
+import com.github.jacks.factoryIdle.components.ResearchProducerComponent
 import com.github.jacks.factoryIdle.data.BuildingType
 import com.github.jacks.factoryIdle.data.CraftOutput
 import com.github.jacks.factoryIdle.data.GlobalResourcePool
@@ -24,6 +25,7 @@ import com.github.jacks.factoryIdle.data.PlayerCraftingQueue
 import com.github.jacks.factoryIdle.data.Recipe
 import com.github.jacks.factoryIdle.data.RecipeRegistry
 import com.github.jacks.factoryIdle.data.Resource
+import com.github.jacks.factoryIdle.data.ResearchManager
 import com.github.jacks.factoryIdle.data.SaveManager
 import com.github.jacks.factoryIdle.data.UnassignedPool
 import com.github.jacks.factoryIdle.data.UnlockRegistry
@@ -38,6 +40,7 @@ import com.github.jacks.factoryIdle.ui.models.CraftingModel
 import com.github.jacks.factoryIdle.ui.models.FactoryModel
 import com.github.jacks.factoryIdle.ui.models.MiningModel
 import com.github.jacks.factoryIdle.ui.models.NavigationModel
+import com.github.jacks.factoryIdle.ui.models.ResearchModel
 import com.github.jacks.factoryIdle.ui.models.ResourceBarModel
 import com.github.jacks.factoryIdle.ui.views.CraftingView
 import com.github.jacks.factoryIdle.ui.views.FactoryView
@@ -67,6 +70,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     internal val unassignedPool      = UnassignedPool()
     internal val recipeRegistry      = RecipeRegistry()
     internal val playerCraftingQueue = PlayerCraftingQueue()
+    internal val researchManager     = ResearchManager(unlockRegistry)
 
     internal val entityWorld: World = configureWorld {
         injectables {
@@ -75,6 +79,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
             add(unlockRegistry)
             add(recipeRegistry)
             add(playerCraftingQueue)
+            add(researchManager)
         }
         systems {
             add(PoolTickSystem())
@@ -109,7 +114,14 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
     private val craftingView     = CraftingView(craftingModel)
     private val factoryView      = FactoryView(factoryModel)
     private val powerView        = PowerView()
-    private val researchView     = ResearchView()
+    private val researchModel    = ResearchModel(researchManager) {
+        var count = 0
+        with(entityWorld) {
+            family { all(ResearchProducerComponent) }.forEach { _ -> count++ }
+        }
+        count
+    }
+    private val researchView     = ResearchView(researchModel)
     private val progressView     = ProgressView()
     private val settingsView     = SettingsView(resourceBarModel)
     private val queueWidget      = QueueWidget(craftingModel, resourceBarModel)
@@ -176,6 +188,7 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
         entityWorld.update(delta)
         resourceBarModel.update(delta)
         craftingModel.update()
+        researchModel.update()
         factoryModel.update(delta)
         stage.act(delta)
         stage.draw()
@@ -196,10 +209,13 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
         type: BuildingType,
         recipe: Recipe? = null,
         cycleProgress: Float = 0f,
-        fractionalAccumulator: Float = 0f
+        fractionalAccumulator: Float = 0f,
+        lastResearchGoalId: String? = null
     ) {
+        val useFuel = type != BuildingType.ASSEMBLER_MK1 && type != BuildingType.RESEARCH_FACILITY
+
         val declaredRates = mutableMapOf<Resource, Float>()
-        declaredRates[Resource.COAL] = COAL_FUEL_RATE
+        if (useFuel) declaredRates[Resource.COAL] = COAL_FUEL_RATE
         if (recipe != null) {
             for ((resource, amount) in recipe.inputs) {
                 declaredRates[resource] = amount / recipe.duration
@@ -211,11 +227,14 @@ class GameScreen(game: FactoryIdle) : KtxScreen {
         entityWorld.entity {
             it += BuildingComponent(type)
             it += ProducerComponent(recipe = recipe, progress = cycleProgress, groupState = initialState)
-            it += FuelConsumerComponent(Resource.COAL, COAL_FUEL_RATE)
+            if (useFuel) it += FuelConsumerComponent(Resource.COAL, COAL_FUEL_RATE)
             it += ProductionSatisfactionComponent(
                 declaredRates         = declaredRates,
                 fractionalAccumulator = fractionalAccumulator
             )
+            if (type == BuildingType.RESEARCH_FACILITY) {
+                it += ResearchProducerComponent(lastGoalId = lastResearchGoalId)
+            }
         }
         unassignedPool.add(type, 1)
     }

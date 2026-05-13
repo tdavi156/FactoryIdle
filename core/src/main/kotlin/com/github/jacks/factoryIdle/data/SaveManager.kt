@@ -40,6 +40,8 @@ object SaveManager {
         restorePool(data, screen)
         restoreLifetimeStats(data, screen)
         restoreUnlocks(data, screen)
+        // Research must be restored before entities so lastGoalId can be set on Research Facilities
+        restoreResearch(data, screen)
         restoreEntities(data, screen)
         restoreCraftingQueue(data, screen)
         restoreMilestones(data, screen)
@@ -149,7 +151,10 @@ object SaveManager {
             unlockedResources   = screen.unlockRegistry.unlockedResources().map { it.name },
             placedBuildings     = placedBuildings,
             craftingQueue       = craftingQueue,
-            completedMilestones = milestoneSystem.completedMilestoneIds()
+            completedMilestones = milestoneSystem.completedMilestoneIds(),
+            activeResearch      = screen.researchManager.activeGoal?.id,
+            researchProgress    = screen.researchManager.progress,
+            completedResearch   = screen.researchManager.completedIds.toSet()
         )
     }
 
@@ -185,13 +190,25 @@ object SaveManager {
                 screen.recipeRegistry.recipesFor(type)
                     .find { it.outputs.keys.firstOrNull()?.name == recipeId }
             }
+            // Pass the active goal id so Research Facility cycle timer survives reload
+            val lastResearchGoalId = if (type == BuildingType.RESEARCH_FACILITY)
+                screen.researchManager.activeGoal?.id else null
             screen.createBuildingEntity(
                 type                  = type,
                 recipe                = recipe,
                 cycleProgress         = entry.cycleProgress,
-                fractionalAccumulator = entry.fractionalAccumulator
+                fractionalAccumulator = entry.fractionalAccumulator,
+                lastResearchGoalId    = lastResearchGoalId
             )
         }
+    }
+
+    private fun restoreResearch(data: SaveData, screen: GameScreen) {
+        screen.researchManager.restoreState(
+            completedResearch = data.completedResearch,
+            activeResearchId  = data.activeResearch,
+            researchProgress  = data.researchProgress
+        )
     }
 
     private fun restoreCraftingQueue(data: SaveData, screen: GameScreen) {
