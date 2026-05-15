@@ -48,7 +48,7 @@ import com.github.jacks.factoryIdle.ui.views.MiningView
 import com.github.jacks.factoryIdle.ui.views.NavSidebarView
 import com.github.jacks.factoryIdle.ui.views.PowerView
 import com.github.jacks.factoryIdle.ui.views.ProgressView
-import com.github.jacks.factoryIdle.ui.views.QueueWidget
+import com.github.jacks.factoryIdle.ui.widgets.QueueWidget
 import com.github.jacks.factoryIdle.ui.views.ResearchView
 import com.github.jacks.factoryIdle.ui.views.ResourceBarView
 import com.github.jacks.factoryIdle.ui.views.SettingsView

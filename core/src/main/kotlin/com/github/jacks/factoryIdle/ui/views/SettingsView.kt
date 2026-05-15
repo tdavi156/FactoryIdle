@@ -1,12 +1,12 @@
 package com.github.jacks.factoryIdle.ui.views
 
-import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.github.jacks.factoryIdle.ui.Buttons
+import com.github.jacks.factoryIdle.ui.Drawables
 import com.github.jacks.factoryIdle.ui.Labels
 import com.github.jacks.factoryIdle.ui.models.Density
 import com.github.jacks.factoryIdle.ui.models.DisplayMode
@@ -77,7 +77,7 @@ class SettingsView(private val model: ResourceBarModel) : Table() {
 
     private fun addSeparator() {
         val line = Table()
-        line.background = skin.newDrawable("white", Color.valueOf("3a3d47"))
+        line.background = skin.getDrawable(Drawables.PX_DIVIDER())
         add(line).fillX().expandX().height(1f).padTop(8f).padBottom(4f).row()
     }
 

@@ -1,4 +1,4 @@
-package com.github.jacks.factoryIdle.ui.views
+package com.github.jacks.factoryIdle.ui.widgets
 
 import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.scenes.scene2d.Actor

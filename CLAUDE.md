@@ -90,6 +90,7 @@ data class ProducerComponent(...) : Component<ProducerComponent> {
 - `setFillParent(true)` on the root table only
 - Use `ChangeListener` on buttons, not `ClickListener`
 - `stage.isDebugAll = true` during layout work — always remove before committing
+- **Never use raw string literals in skin lookups** — always go through the `Drawables` enum (`skin.getDrawable(Drawables.SOMETHING())`). Raw strings bypass the fallback system and cause runtime crashes.
 
 ---
 
